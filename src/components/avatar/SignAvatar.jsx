@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react'
-import { AlertCircle } from 'lucide-react'
+import React, { useEffect, useRef, useState, useCallback } from 'react'
+import { AlertCircle, RotateCcw } from 'lucide-react'
 import { initAvatar, destroyAvatar, subscribeAvatarState } from '../../services/avatar.service.js'
 import AvatarLoading from './AvatarLoading.jsx'
 
@@ -8,38 +8,55 @@ export default function SignAvatar({ height = 'min(64vh, 540px)', onError }) {
   const [loadPct, setLoadPct] = useState(0)
   const [isLoaded, setIsLoaded] = useState(false)
   const [unsupported, setUnsupported] = useState([])
+  const [initError, setInitError] = useState(null)
+  const [mountKey, setMountKey] = useState(0)
 
-  useEffect(() => {
+  const setupAvatar = useCallback(() => {
     if (!canvasRef.current) return
 
-    let mounted = true
+    setInitError(null)
+    setLoadPct(0)
+    setIsLoaded(false)
 
-    initAvatar(
-      canvasRef.current,
-      (pct) => {
-        if (mounted) {
+    try {
+      initAvatar(
+        canvasRef.current,
+        (pct) => {
           setLoadPct(pct)
           if (pct >= 100) setIsLoaded(true)
+        },
+        (err) => {
+          console.error('SignAvatar caught error:', err)
+          setInitError(err)
+          if (onError) onError(err)
         }
-      },
-      (err) => {
-        if (mounted && onError) onError(err)
-      }
-    )
+      )
+    } catch (e) {
+      console.error('SignAvatar synchronous init error:', e)
+      setInitError(e)
+      if (onError) onError(e)
+    }
+  }, [onError])
+
+  useEffect(() => {
+    setupAvatar()
 
     const unsubscribe = subscribeAvatarState((s) => {
-      if (mounted) {
-        setIsLoaded(s.isLoaded)
-        setUnsupported(s.unsupported || [])
-      }
+      setIsLoaded(s.isLoaded)
+      setUnsupported(s.unsupported || [])
     })
 
     return () => {
-      mounted = false
       unsubscribe()
       destroyAvatar()
     }
-  }, [onError])
+  }, [setupAvatar, mountKey])
+
+  const handleRetry = () => {
+    destroyAvatar()
+    setInitError(null)
+    setMountKey((prev) => prev + 1)
+  }
 
   return (
     <div
@@ -55,19 +72,79 @@ export default function SignAvatar({ height = 'min(64vh, 540px)', onError }) {
       }}
     >
       <canvas
+        key={mountKey}
         ref={canvasRef}
         style={{
           width: '100%',
           height: '100%',
-          display: 'block',
+          display: initError ? 'none' : 'block',
         }}
       />
 
       {/* Loading Overlay */}
-      {!isLoaded && <AvatarLoading progress={loadPct} />}
+      {!isLoaded && !initError && <AvatarLoading progress={loadPct} />}
+
+      {/* Error Fallback with Retry */}
+      {initError && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 24,
+            textAlign: 'center',
+            background: 'rgba(255, 255, 255, 0.95)',
+          }}
+        >
+          <div
+            style={{
+              width: 50,
+              height: 50,
+              borderRadius: '50%',
+              background: '#fee2e2',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 14,
+            }}
+          >
+            <AlertCircle size={26} color="#ef4444" />
+          </div>
+          <h3 style={{ margin: '0 0 8px 0', fontSize: 16, fontWeight: 600, color: '#1e293b' }}>
+            Avatar 3D Graphics Unavailable
+          </h3>
+          <p style={{ margin: '0 0 16px 0', fontSize: 13, color: '#64748b', maxWidth: 420, lineHeight: 1.5 }}>
+            {initError.message && initError.message.includes('WebGL')
+              ? 'Your browser temporarily blocked or exhausted WebGL graphics contexts. Click below to re-initialize graphics.'
+              : initError.message || 'Could not load 3D model resources.'}
+          </p>
+          <button
+            onClick={handleRetry}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '10px 18px',
+              borderRadius: 8,
+              border: 'none',
+              background: '#0284c7',
+              color: '#ffffff',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+              boxShadow: '0 2px 6px rgba(2, 132, 199, 0.3)',
+            }}
+          >
+            <RotateCcw size={15} /> Retry Avatar
+          </button>
+        </div>
+      )}
 
       {/* Unsupported Sign Banner */}
-      {unsupported.length > 0 && (
+      {unsupported.length > 0 && !initError && (
         <div
           style={{
             position: 'absolute',
@@ -98,4 +175,3 @@ export default function SignAvatar({ height = 'min(64vh, 540px)', onError }) {
     </div>
   )
 }
-

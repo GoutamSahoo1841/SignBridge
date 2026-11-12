@@ -143,6 +143,41 @@ export function getState() {
 }
 
 /**
+ * Safely creates a WebGLRenderer with fallbacks to avoid context creation failures.
+ */
+function createSafeRenderer(canvas) {
+  // Option 1: Standard high quality
+  try {
+    return new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      alpha: true,
+      powerPreference: 'default',
+      failIfMajorPerformanceCaveat: false,
+    })
+  } catch (err1) {
+    console.warn('Primary WebGLRenderer creation failed, trying fallback...', err1)
+  }
+
+  // Option 2: Fallback without antialias or alpha
+  try {
+    return new THREE.WebGLRenderer({
+      canvas,
+      antialias: false,
+      alpha: false,
+      powerPreference: 'low-power',
+      precision: 'mediump',
+      failIfMajorPerformanceCaveat: false,
+    })
+  } catch (err2) {
+    console.warn('Secondary WebGLRenderer creation failed, trying minimal configuration...', err2)
+  }
+
+  // Option 3: Minimal fallback
+  return new THREE.WebGLRenderer({ canvas })
+}
+
+/**
  * Initializes the 3D scene, loads the realistic human avatar, and starts the render loop.
  */
 export function initAvatar(canvas, onProgress, onError) {
@@ -151,141 +186,174 @@ export function initAvatar(canvas, onProgress, onError) {
     return
   }
 
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true })
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
-  renderer.outputColorSpace = THREE.SRGBColorSpace
+  try {
+    const renderer = createSafeRenderer(canvas)
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
+    renderer.outputColorSpace = THREE.SRGBColorSpace
 
-  const scene = new THREE.Scene()
+    const scene = new THREE.Scene()
 
-  // Front-facing camera angled to keep head, arms and hands within viewport during signing
-  const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 50)
-  camera.position.set(0, 1.36, 2.35)
-  camera.lookAt(0, 1.25, 0)
+    // Front-facing camera angled to keep head, arms and hands within viewport during signing
+    const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 50)
+    camera.position.set(0, 1.36, 2.35)
+    camera.lookAt(0, 1.25, 0)
 
-  // Realistic Studio Lighting
-  const hemiLight = new THREE.HemisphereLight(0xffffff, 0x8899aa, 0.9)
-  scene.add(hemiLight)
+    // Realistic Studio Lighting
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x8899aa, 0.9)
+    scene.add(hemiLight)
 
-  const keyLight = new THREE.DirectionalLight(0xffffff, 0.95)
-  keyLight.position.set(1.5, 3.2, 2.8)
-  scene.add(keyLight)
+    const keyLight = new THREE.DirectionalLight(0xffffff, 0.95)
+    keyLight.position.set(1.5, 3.2, 2.8)
+    scene.add(keyLight)
 
-  const fillLight = new THREE.DirectionalLight(0xccddee, 0.45)
-  fillLight.position.set(-1.8, 2.0, 1.6)
-  scene.add(fillLight)
+    const fillLight = new THREE.DirectionalLight(0xccddee, 0.45)
+    fillLight.position.set(-1.8, 2.0, 1.6)
+    scene.add(fillLight)
 
-  const rimLight = new THREE.DirectionalLight(0xffffff, 0.35)
-  rimLight.position.set(0, 3.0, -2.2)
-  scene.add(rimLight)
+    const rimLight = new THREE.DirectionalLight(0xffffff, 0.35)
+    rimLight.position.set(0, 3.0, -2.2)
+    scene.add(rimLight)
 
-  sceneState = {
-    renderer,
-    scene,
-    camera,
-    model: null,
-    mixer: null,
-    clock: new THREE.Clock(),
-    idleAction: null,
-    activeAction: null,
-    isLoaded: false,
-    isPlaying: false,
-    isPaused: false,
-    speed: 1,
-    sequence: [],
-    currentIndex: -1,
-    currentGloss: '',
-    elapsedTime: 0,
-    totalDuration: 0,
-    unsupportedSigns: [],
-    animId: 0,
-    shoulders: {
-      R: new THREE.Vector3(-0.171, 1.531, -0.049),
-      L: new THREE.Vector3(0.171, 1.531, -0.049),
-    },
-  }
+    const onContextLost = (e) => {
+      e.preventDefault()
+      console.warn('Avatar WebGL context was lost.')
+      if (sceneState) sceneState.contextLost = true
+    }
 
-  // Load the Realistic Human Avatar GLB
-  const loader = new GLTFLoader()
-  loader.load(
-    '/models/avatar/human-avatar.glb',
-    (gltf) => {
-      const model = gltf.scene
-      scene.add(model)
-      sceneState.model = model
+    const onContextRestored = () => {
+      console.log('Avatar WebGL context restored.')
+      if (sceneState) {
+        sceneState.contextLost = false
+        if (sceneState.model && sceneState.renderer) {
+          sceneState.renderer.render(sceneState.scene, sceneState.camera)
+        }
+      }
+    }
 
-      // Locate skeleton shoulders to calibrate IK dynamically
-      model.traverse((obj) => {
-        if (obj.isBone) {
-          if (obj.name === 'RightArm' || obj.name === 'RightShoulder') {
-            obj.getWorldPosition(sceneState.shoulders.R)
-          } else if (obj.name === 'LeftArm' || obj.name === 'LeftShoulder') {
-            obj.getWorldPosition(sceneState.shoulders.L)
+    canvas.addEventListener('webglcontextlost', onContextLost, false)
+    canvas.addEventListener('webglcontextrestored', onContextRestored, false)
+
+    sceneState = {
+      canvas,
+      renderer,
+      scene,
+      camera,
+      model: null,
+      mixer: null,
+      clock: new THREE.Clock(),
+      idleAction: null,
+      activeAction: null,
+      isLoaded: false,
+      isPlaying: false,
+      isPaused: false,
+      contextLost: false,
+      onContextLost,
+      onContextRestored,
+      speed: 1,
+      sequence: [],
+      currentIndex: -1,
+      currentGloss: '',
+      elapsedTime: 0,
+      totalDuration: 0,
+      unsupportedSigns: [],
+      animId: 0,
+      shoulders: {
+        R: new THREE.Vector3(-0.171, 1.531, -0.049),
+        L: new THREE.Vector3(0.171, 1.531, -0.049),
+      },
+    }
+
+    // Load the Realistic Human Avatar GLB
+    const loader = new GLTFLoader()
+    loader.load(
+      '/models/avatar/human-avatar.glb',
+      (gltf) => {
+        if (!sceneState) return // destroyed while loading
+        const model = gltf.scene
+        scene.add(model)
+        sceneState.model = model
+
+        // Locate skeleton shoulders to calibrate IK dynamically
+        model.traverse((obj) => {
+          if (obj.isBone) {
+            if (obj.name === 'RightArm' || obj.name === 'RightShoulder') {
+              obj.getWorldPosition(sceneState.shoulders.R)
+            } else if (obj.name === 'LeftArm' || obj.name === 'LeftShoulder') {
+              obj.getWorldPosition(sceneState.shoulders.L)
+            }
+          }
+        })
+
+        // Setup AnimationMixer
+        const mixer = new THREE.AnimationMixer(model)
+        sceneState.mixer = mixer
+
+        // Setup and play natural idle resting pose
+        const idleClip = createIdleClip()
+        const idleAction = mixer.clipAction(idleClip)
+        idleAction.setLoop(THREE.LoopRepeat)
+        idleAction.play()
+        sceneState.idleAction = idleAction
+        sceneState.activeAction = idleAction
+
+        sceneState.isLoaded = true
+        if (onProgress) onProgress(100)
+        notifyListeners()
+      },
+      (xhr) => {
+        if (xhr.lengthComputable && onProgress) {
+          const pct = Math.round((xhr.loaded / xhr.total) * 100)
+          onProgress(pct)
+        }
+      },
+      (err) => {
+        console.error('Error loading human avatar GLB:', err)
+        if (onError) onError(err)
+      }
+    )
+
+    // Animation Render Loop
+    function animate() {
+      if (!sceneState) return
+      sceneState.animId = requestAnimationFrame(animate)
+
+      if (sceneState.contextLost) return
+
+      const delta = sceneState.clock.getDelta()
+
+      if (sceneState.mixer) {
+        if (!sceneState.isPaused) {
+          sceneState.mixer.update(delta * sceneState.speed)
+
+          if (sceneState.isPlaying) {
+            sceneState.elapsedTime += delta * sceneState.speed
+            notifyListeners()
           }
         }
-      })
-
-      // Setup AnimationMixer
-      const mixer = new THREE.AnimationMixer(model)
-      sceneState.mixer = mixer
-
-      // Setup and play natural idle resting pose
-      const idleClip = createIdleClip()
-      const idleAction = mixer.clipAction(idleClip)
-      idleAction.setLoop(THREE.LoopRepeat)
-      idleAction.play()
-      sceneState.idleAction = idleAction
-      sceneState.activeAction = idleAction
-
-      sceneState.isLoaded = true
-      if (onProgress) onProgress(100)
-      notifyListeners()
-    },
-    (xhr) => {
-      if (xhr.lengthComputable && onProgress) {
-        const pct = Math.round((xhr.loaded / xhr.total) * 100)
-        onProgress(pct)
       }
-    },
-    (err) => {
-      console.error('Error loading human avatar GLB:', err)
-      if (onError) onError(err)
-    }
-  )
 
-  // Animation Render Loop
-  function animate() {
-    sceneState.animId = requestAnimationFrame(animate)
-
-    const delta = sceneState.clock.getDelta()
-
-    if (sceneState.mixer) {
-      if (!sceneState.isPaused) {
-        sceneState.mixer.update(delta * sceneState.speed)
-
-        if (sceneState.isPlaying) {
-          sceneState.elapsedTime += delta * sceneState.speed
-          notifyListeners()
+      // Responsive sizing
+      const stage = canvas.parentElement
+      if (stage && stage.clientWidth && stage.clientHeight) {
+        const w = stage.clientWidth
+        const h = stage.clientHeight
+        const dpr = Math.min(window.devicePixelRatio || 1, 2)
+        if (canvas.width !== Math.floor(w * dpr) || canvas.height !== Math.floor(h * dpr)) {
+          renderer.setSize(w, h, false)
+          camera.aspect = w / h
+          camera.updateProjectionMatrix()
         }
       }
+
+      renderer.render(scene, camera)
     }
 
-    // Responsive sizing
-    const stage = canvas.parentElement
-    if (stage && stage.clientWidth && stage.clientHeight) {
-      const w = stage.clientWidth
-      const h = stage.clientHeight
-      const dpr = Math.min(window.devicePixelRatio || 1, 2)
-      if (canvas.width !== Math.floor(w * dpr) || canvas.height !== Math.floor(h * dpr)) {
-        renderer.setSize(w, h, false)
-        camera.aspect = w / h
-        camera.updateProjectionMatrix()
-      }
-    }
-
-    renderer.render(scene, camera)
+    sceneState.animId = requestAnimationFrame(animate)
+  } catch (err) {
+    console.error('WebGL initialization error in initAvatar:', err)
+    sceneState = null
+    if (onError) onError(err)
   }
-
-  sceneState.animId = requestAnimationFrame(animate)
 }
 
 /**
@@ -462,11 +530,46 @@ export function isAvatarReady() {
 export function destroyAvatar() {
   if (!sceneState) return
 
-  cancelAnimationFrame(sceneState.animId)
-  if (sceneState.mixer) sceneState.mixer.stopAllAction()
+  if (sceneState.animId) {
+    cancelAnimationFrame(sceneState.animId)
+    sceneState.animId = 0
+  }
+
+  if (sceneState.mixer) {
+    sceneState.mixer.stopAllAction()
+  }
+
+  if (sceneState.canvas && sceneState.onContextLost) {
+    sceneState.canvas.removeEventListener('webglcontextlost', sceneState.onContextLost)
+    sceneState.canvas.removeEventListener('webglcontextrestored', sceneState.onContextRestored)
+  }
+
+  if (sceneState.model && sceneState.scene) {
+    sceneState.scene.remove(sceneState.model)
+    sceneState.model.traverse((child) => {
+      if (child.geometry) child.geometry.dispose()
+      if (child.material) {
+        if (Array.isArray(child.material)) {
+          child.material.forEach((m) => m.dispose())
+        } else {
+          child.material.dispose()
+        }
+      }
+    })
+  }
 
   if (sceneState.renderer) {
-    sceneState.renderer.dispose()
+    try {
+      sceneState.renderer.dispose()
+      sceneState.renderer.forceContextLoss()
+      const gl = sceneState.renderer.getContext()
+      if (gl) {
+        const ext = gl.getExtension('WEBGL_lose_context')
+        if (ext) ext.loseContext()
+      }
+    } catch (e) {
+      console.warn('Error cleanly disposing WebGL renderer:', e)
+    }
   }
 
   sceneState = null

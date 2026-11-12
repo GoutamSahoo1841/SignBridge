@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { ArrowRight, Mic, Sparkles } from 'lucide-react'
 import * as avatarService from '../services/avatar.service.js'
 import SignAvatar from '../components/avatar/SignAvatar.jsx'
@@ -79,6 +79,10 @@ export default function AvatarPage() {
     }
   }
 
+  const handleAvatarError = useCallback((err) => {
+    setError('Could not load 3D avatar: ' + (err.message || err))
+  }, [])
+
   return (
     <>
       <div className="page-intro feature-intro">
@@ -117,7 +121,7 @@ export default function AvatarPage() {
         <div style={{ marginBottom: 12 }}>
           <SignAvatar
             height="min(64vh, 540px)"
-            onError={(err) => setError('Could not load 3D avatar: ' + (err.message || err))}
+            onError={handleAvatarError}
           />
 
           {/* Interactive Avatar Controls Bar */}

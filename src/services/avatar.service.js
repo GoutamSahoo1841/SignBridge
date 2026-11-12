@@ -144,41 +144,60 @@ export function getState() {
 
 /**
  * Diagnostic helper to safely verify if WebGL 2 is functional before Three.js attempts initialization.
+ * Result is cached to avoid repeated test context creations that consume browser WebGL context limits.
  */
+let cachedWebGL2Support = null
+
 export function checkWebGL2Support() {
+  if (cachedWebGL2Support !== null) {
+    return cachedWebGL2Support
+  }
+
   if (typeof window === 'undefined' || typeof document === 'undefined') {
-    return { ok: false, reason: 'WebGL is not available in non-browser environment.' }
+    cachedWebGL2Support = { ok: false, reason: 'WebGL is not available in non-browser environment.' }
+    return cachedWebGL2Support
   }
 
   try {
     const canvas = document.createElement('canvas')
     const gl = canvas.getContext('webgl2')
     if (!gl) {
-      return {
+      cachedWebGL2Support = {
         ok: false,
         reason:
           'WebGL 2 graphics acceleration is disabled or blocked in your browser. Please ensure Hardware Acceleration is turned ON in browser settings (e.g. chrome://settings/system) or check your browser shields.',
       }
+      return cachedWebGL2Support
     }
 
     if (gl.isContextLost && gl.isContextLost()) {
-      return {
+      cachedWebGL2Support = {
         ok: false,
         reason: 'WebGL graphics context was lost. Refreshing the browser tab will restore GPU access.',
       }
+      return cachedWebGL2Support
     }
 
     const precisionFormat = gl.getShaderPrecisionFormat(gl.VERTEX_SHADER, gl.HIGH_FLOAT)
     if (!precisionFormat || precisionFormat.precision <= 0) {
-      return {
+      cachedWebGL2Support = {
         ok: false,
         reason: 'Shader precision is unavailable on your graphics device.',
       }
+      return cachedWebGL2Support
     }
 
-    return { ok: true }
+    // Immediately release the diagnostic context so it does not count against the browser WebGL context limit
+    const loseExt = gl.getExtension('WEBGL_lose_context')
+    if (loseExt) {
+      loseExt.loseContext()
+    }
+
+    cachedWebGL2Support = { ok: true }
+    return cachedWebGL2Support
   } catch (err) {
-    return { ok: false, reason: err.message || 'Error checking WebGL 2 capabilities.' }
+    cachedWebGL2Support = { ok: false, reason: err.message || 'Error checking WebGL 2 capabilities.' }
+    return cachedWebGL2Support
   }
 }
 
@@ -572,6 +591,14 @@ export function destroyAvatar() {
 
   if (sceneState.renderer) {
     try {
+      if (typeof sceneState.renderer.forceContextLoss === 'function') {
+        sceneState.renderer.forceContextLoss()
+      }
+      const gl = sceneState.renderer.getContext()
+      if (gl) {
+        const loseExt = gl.getExtension('WEBGL_lose_context')
+        if (loseExt) loseExt.loseContext()
+      }
       sceneState.renderer.dispose()
     } catch (e) {
       console.warn('Error disposing WebGL renderer:', e)

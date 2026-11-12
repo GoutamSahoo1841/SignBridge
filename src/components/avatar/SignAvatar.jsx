@@ -5,6 +5,9 @@ import AvatarLoading from './AvatarLoading.jsx'
 
 export default function SignAvatar({ height = 'min(64vh, 540px)', onError }) {
   const containerRef = useRef(null)
+  const onErrorRef = useRef(onError)
+  onErrorRef.current = onError
+
   const [loadPct, setLoadPct] = useState(0)
   const [isLoaded, setIsLoaded] = useState(false)
   const [unsupported, setUnsupported] = useState([])
@@ -32,7 +35,7 @@ export default function SignAvatar({ height = 'min(64vh, 540px)', onError }) {
           if (mounted) {
             console.error('SignAvatar caught error:', err)
             setInitError(err)
-            if (onError) onError(err)
+            if (onErrorRef.current) onErrorRef.current(err)
           }
         }
       )
@@ -40,7 +43,7 @@ export default function SignAvatar({ height = 'min(64vh, 540px)', onError }) {
       if (mounted) {
         console.error('SignAvatar synchronous error:', e)
         setInitError(e)
-        if (onError) onError(e)
+        if (onErrorRef.current) onErrorRef.current(e)
       }
     }
 
@@ -56,7 +59,7 @@ export default function SignAvatar({ height = 'min(64vh, 540px)', onError }) {
       unsubscribe()
       destroyAvatar()
     }
-  }, [mountKey, onError])
+  }, [mountKey])
 
   const handleRetry = () => {
     destroyAvatar()

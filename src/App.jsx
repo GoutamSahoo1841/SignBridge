@@ -46,9 +46,6 @@ export default function App() {
           <footer>
             <span>SignBridge</span>
             <span>Communication without barriers.</span>
-            <span className="footer-right">
-              <ShieldCheck size={13} /> Private &amp; secure · Local inference · No API key
-            </span>
           </footer>
         </main>
       </div>

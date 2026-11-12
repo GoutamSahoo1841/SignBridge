@@ -14,7 +14,7 @@ export default function Dashboard({ setActive }) {
     <>
       <div className="page-intro welcome">
         <div>
-          <span className="eyebrow">SIGNBRIDGE — LOCAL INFERENCE · NO API KEY</span>
+          <span className="eyebrow">SIGNBRIDGE</span>
           <h2>Your voice matters.<br /><em>Let&apos;s make it heard.</em></h2>
           <p>Welcome to SignBridge. All processing happens in your browser.</p>
         </div>

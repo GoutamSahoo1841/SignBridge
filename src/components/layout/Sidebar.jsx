@@ -61,7 +61,6 @@ export default function Sidebar({ active, setActive, open, setOpen }) {
             <div className="avatar">SB</div>
             <div className="profile-copy">
               <strong>SignBridge</strong>
-              <span>Local inference · No API key</span>
             </div>
             <MoreHorizontal size={18} className="muted-icon" />
           </div>

@@ -143,51 +143,87 @@ export function getState() {
 }
 
 /**
- * Safely creates a WebGLRenderer with fallbacks to avoid context creation failures.
+ * Diagnostic helper to safely verify if WebGL 2 is functional before Three.js attempts initialization.
  */
-function createSafeRenderer(canvas) {
-  // Option 1: Standard high quality
-  try {
-    return new THREE.WebGLRenderer({
-      canvas,
-      antialias: true,
-      alpha: true,
-      powerPreference: 'default',
-      failIfMajorPerformanceCaveat: false,
-    })
-  } catch (err1) {
-    console.warn('Primary WebGLRenderer creation failed, trying fallback...', err1)
+export function checkWebGL2Support() {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return { ok: false, reason: 'WebGL is not available in non-browser environment.' }
   }
 
-  // Option 2: Fallback without antialias or alpha
   try {
-    return new THREE.WebGLRenderer({
-      canvas,
-      antialias: false,
-      alpha: false,
-      powerPreference: 'low-power',
-      precision: 'mediump',
-      failIfMajorPerformanceCaveat: false,
-    })
-  } catch (err2) {
-    console.warn('Secondary WebGLRenderer creation failed, trying minimal configuration...', err2)
-  }
+    const canvas = document.createElement('canvas')
+    const gl = canvas.getContext('webgl2')
+    if (!gl) {
+      return {
+        ok: false,
+        reason:
+          'WebGL 2 graphics acceleration is disabled or blocked in your browser. Please ensure Hardware Acceleration is turned ON in browser settings (e.g. chrome://settings/system) or check your browser shields.',
+      }
+    }
 
-  // Option 3: Minimal fallback
-  return new THREE.WebGLRenderer({ canvas })
+    if (gl.isContextLost && gl.isContextLost()) {
+      return {
+        ok: false,
+        reason: 'WebGL graphics context was lost. Refreshing the browser tab will restore GPU access.',
+      }
+    }
+
+    const precisionFormat = gl.getShaderPrecisionFormat(gl.VERTEX_SHADER, gl.HIGH_FLOAT)
+    if (!precisionFormat || precisionFormat.precision <= 0) {
+      return {
+        ok: false,
+        reason: 'Shader precision is unavailable on your graphics device.',
+      }
+    }
+
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, reason: err.message || 'Error checking WebGL 2 capabilities.' }
+  }
 }
 
 /**
  * Initializes the 3D scene, loads the realistic human avatar, and starts the render loop.
+ * Accepts either a canvas element or a container div.
  */
-export function initAvatar(canvas, onProgress, onError) {
+export function initAvatar(containerOrCanvas, onProgress, onError) {
   if (sceneState) {
     if (sceneState.isLoaded && onProgress) onProgress(100)
     return
   }
 
+  // Pre-check WebGL 2 to avoid unhandled Three.js internal precision exceptions
+  const support = checkWebGL2Support()
+  if (!support.ok) {
+    console.error('WebGL 2 support check failed:', support.reason)
+    if (onError) onError(new Error(support.reason))
+    return
+  }
+
   try {
-    const renderer = createSafeRenderer(canvas)
+    let container = null
+    let canvas = null
+    let createdCanvas = false
+
+    if (containerOrCanvas instanceof HTMLCanvasElement) {
+      canvas = containerOrCanvas
+      container = canvas.parentElement
+    } else {
+      container = containerOrCanvas
+      canvas = document.createElement('canvas')
+      canvas.style.width = '100%'
+      canvas.style.height = '100%'
+      canvas.style.display = 'block'
+      container.appendChild(canvas)
+      createdCanvas = true
+    }
+
+    const renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      alpha: true,
+      powerPreference: 'default',
+    })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
     renderer.outputColorSpace = THREE.SRGBColorSpace
 
@@ -214,41 +250,21 @@ export function initAvatar(canvas, onProgress, onError) {
     rimLight.position.set(0, 3.0, -2.2)
     scene.add(rimLight)
 
-    const onContextLost = (e) => {
-      e.preventDefault()
-      console.warn('Avatar WebGL context was lost.')
-      if (sceneState) sceneState.contextLost = true
-    }
-
-    const onContextRestored = () => {
-      console.log('Avatar WebGL context restored.')
-      if (sceneState) {
-        sceneState.contextLost = false
-        if (sceneState.model && sceneState.renderer) {
-          sceneState.renderer.render(sceneState.scene, sceneState.camera)
-        }
-      }
-    }
-
-    canvas.addEventListener('webglcontextlost', onContextLost, false)
-    canvas.addEventListener('webglcontextrestored', onContextRestored, false)
-
     sceneState = {
+      container,
       canvas,
+      createdCanvas,
       renderer,
       scene,
       camera,
       model: null,
       mixer: null,
-      clock: new THREE.Clock(),
+      lastTimestamp: performance.now(),
       idleAction: null,
       activeAction: null,
       isLoaded: false,
       isPlaying: false,
       isPaused: false,
-      contextLost: false,
-      onContextLost,
-      onContextRestored,
       speed: 1,
       sequence: [],
       currentIndex: -1,
@@ -312,14 +328,14 @@ export function initAvatar(canvas, onProgress, onError) {
       }
     )
 
-    // Animation Render Loop
-    function animate() {
+    // Animation Render Loop (Using standard performance.now to avoid deprecated THREE.Clock)
+    function animate(now) {
       if (!sceneState) return
       sceneState.animId = requestAnimationFrame(animate)
 
-      if (sceneState.contextLost) return
-
-      const delta = sceneState.clock.getDelta()
+      const currentTime = now || performance.now()
+      const delta = Math.min((currentTime - sceneState.lastTimestamp) / 1000, 0.1)
+      sceneState.lastTimestamp = currentTime
 
       if (sceneState.mixer) {
         if (!sceneState.isPaused) {
@@ -333,10 +349,10 @@ export function initAvatar(canvas, onProgress, onError) {
       }
 
       // Responsive sizing
-      const stage = canvas.parentElement
-      if (stage && stage.clientWidth && stage.clientHeight) {
-        const w = stage.clientWidth
-        const h = stage.clientHeight
+      const parent = canvas.parentElement
+      if (parent && parent.clientWidth && parent.clientHeight) {
+        const w = parent.clientWidth
+        const h = parent.clientHeight
         const dpr = Math.min(window.devicePixelRatio || 1, 2)
         if (canvas.width !== Math.floor(w * dpr) || canvas.height !== Math.floor(h * dpr)) {
           renderer.setSize(w, h, false)
@@ -348,9 +364,10 @@ export function initAvatar(canvas, onProgress, onError) {
       renderer.render(scene, camera)
     }
 
+    sceneState.lastTimestamp = performance.now()
     sceneState.animId = requestAnimationFrame(animate)
   } catch (err) {
-    console.error('WebGL initialization error in initAvatar:', err)
+    console.error('Avatar WebGL initialization error:', err)
     sceneState = null
     if (onError) onError(err)
   }
@@ -539,11 +556,6 @@ export function destroyAvatar() {
     sceneState.mixer.stopAllAction()
   }
 
-  if (sceneState.canvas && sceneState.onContextLost) {
-    sceneState.canvas.removeEventListener('webglcontextlost', sceneState.onContextLost)
-    sceneState.canvas.removeEventListener('webglcontextrestored', sceneState.onContextRestored)
-  }
-
   if (sceneState.model && sceneState.scene) {
     sceneState.scene.remove(sceneState.model)
     sceneState.model.traverse((child) => {
@@ -561,15 +573,13 @@ export function destroyAvatar() {
   if (sceneState.renderer) {
     try {
       sceneState.renderer.dispose()
-      sceneState.renderer.forceContextLoss()
-      const gl = sceneState.renderer.getContext()
-      if (gl) {
-        const ext = gl.getExtension('WEBGL_lose_context')
-        if (ext) ext.loseContext()
-      }
     } catch (e) {
-      console.warn('Error cleanly disposing WebGL renderer:', e)
+      console.warn('Error disposing WebGL renderer:', e)
     }
+  }
+
+  if (sceneState.createdCanvas && sceneState.canvas && sceneState.canvas.parentElement) {
+    sceneState.canvas.parentElement.removeChild(sceneState.canvas)
   }
 
   sceneState = null

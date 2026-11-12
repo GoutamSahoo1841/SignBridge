@@ -1,56 +1,62 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { AlertCircle, RotateCcw } from 'lucide-react'
 import { initAvatar, destroyAvatar, subscribeAvatarState } from '../../services/avatar.service.js'
 import AvatarLoading from './AvatarLoading.jsx'
 
 export default function SignAvatar({ height = 'min(64vh, 540px)', onError }) {
-  const canvasRef = useRef(null)
+  const containerRef = useRef(null)
   const [loadPct, setLoadPct] = useState(0)
   const [isLoaded, setIsLoaded] = useState(false)
   const [unsupported, setUnsupported] = useState([])
   const [initError, setInitError] = useState(null)
   const [mountKey, setMountKey] = useState(0)
 
-  const setupAvatar = useCallback(() => {
-    if (!canvasRef.current) return
+  useEffect(() => {
+    if (!containerRef.current) return
 
+    let mounted = true
     setInitError(null)
     setLoadPct(0)
     setIsLoaded(false)
 
     try {
       initAvatar(
-        canvasRef.current,
+        containerRef.current,
         (pct) => {
-          setLoadPct(pct)
-          if (pct >= 100) setIsLoaded(true)
+          if (mounted) {
+            setLoadPct(pct)
+            if (pct >= 100) setIsLoaded(true)
+          }
         },
         (err) => {
-          console.error('SignAvatar caught error:', err)
-          setInitError(err)
-          if (onError) onError(err)
+          if (mounted) {
+            console.error('SignAvatar caught error:', err)
+            setInitError(err)
+            if (onError) onError(err)
+          }
         }
       )
     } catch (e) {
-      console.error('SignAvatar synchronous init error:', e)
-      setInitError(e)
-      if (onError) onError(e)
+      if (mounted) {
+        console.error('SignAvatar synchronous error:', e)
+        setInitError(e)
+        if (onError) onError(e)
+      }
     }
-  }, [onError])
-
-  useEffect(() => {
-    setupAvatar()
 
     const unsubscribe = subscribeAvatarState((s) => {
-      setIsLoaded(s.isLoaded)
-      setUnsupported(s.unsupported || [])
+      if (mounted) {
+        setIsLoaded(s.isLoaded)
+        setUnsupported(s.unsupported || [])
+      }
     })
 
     return () => {
+      mounted = false
       unsubscribe()
       destroyAvatar()
     }
-  }, [setupAvatar, mountKey])
+  }, [mountKey, onError])
 
   const handleRetry = () => {
     destroyAvatar()
@@ -71,9 +77,10 @@ export default function SignAvatar({ height = 'min(64vh, 540px)', onError }) {
         boxShadow: 'inset 0 2px 6px rgba(0,0,0,0.04)',
       }}
     >
-      <canvas
+      {/* 3D Canvas Container */}
+      <div
+        ref={containerRef}
         key={mountKey}
-        ref={canvasRef}
         style={{
           width: '100%',
           height: '100%',
@@ -116,10 +123,17 @@ export default function SignAvatar({ height = 'min(64vh, 540px)', onError }) {
           <h3 style={{ margin: '0 0 8px 0', fontSize: 16, fontWeight: 600, color: '#1e293b' }}>
             Avatar 3D Graphics Unavailable
           </h3>
-          <p style={{ margin: '0 0 16px 0', fontSize: 13, color: '#64748b', maxWidth: 420, lineHeight: 1.5 }}>
-            {initError.message && initError.message.includes('WebGL')
-              ? 'Your browser temporarily blocked or exhausted WebGL graphics contexts. Click below to re-initialize graphics.'
-              : initError.message || 'Could not load 3D model resources.'}
+          <p
+            style={{
+              margin: '0 0 16px 0',
+              fontSize: 13,
+              color: '#64748b',
+              maxWidth: 440,
+              lineHeight: 1.5,
+            }}
+          >
+            {initError.message ||
+              'WebGL 2 graphics acceleration is disabled or blocked in your browser. Please ensure Hardware Acceleration is enabled in your browser settings (chrome://settings/system).'}
           </p>
           <button
             onClick={handleRetry}

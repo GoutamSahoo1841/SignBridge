@@ -248,10 +248,10 @@ export function initAvatar(containerOrCanvas, onProgress, onError) {
 
     const scene = new THREE.Scene()
 
-    // Front-facing camera angled to keep head, arms and hands within viewport during signing
-    const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 50)
-    camera.position.set(0, 1.36, 2.35)
-    camera.lookAt(0, 1.25, 0)
+    // Front-facing camera: framing for RPM full-body avatar (head to waist, arms visible)
+    const camera = new THREE.PerspectiveCamera(28, 1, 0.1, 50)
+    camera.position.set(0, 1.42, 2.6)
+    camera.lookAt(0, 1.3, 0)
 
     // Realistic Studio Lighting
     const hemiLight = new THREE.HemisphereLight(0xffffff, 0x8899aa, 0.9)
@@ -309,11 +309,14 @@ export function initAvatar(containerOrCanvas, onProgress, onError) {
         sceneState.model = model
 
         // Locate skeleton shoulders to calibrate IK dynamically
+        // Supports both standard rigged models and Ready Player Me bone naming conventions
+        const RPM_RIGHT = new Set(['RightArm', 'RightShoulder', 'mixamorigRightArm', 'mixamorigRightShoulder'])
+        const RPM_LEFT  = new Set(['LeftArm',  'LeftShoulder',  'mixamorigLeftArm',  'mixamorigLeftShoulder'])
         model.traverse((obj) => {
-          if (obj.isBone) {
-            if (obj.name === 'RightArm' || obj.name === 'RightShoulder') {
+          if (obj.isBone || obj.type === 'Bone') {
+            if (RPM_RIGHT.has(obj.name)) {
               obj.getWorldPosition(sceneState.shoulders.R)
-            } else if (obj.name === 'LeftArm' || obj.name === 'LeftShoulder') {
+            } else if (RPM_LEFT.has(obj.name)) {
               obj.getWorldPosition(sceneState.shoulders.L)
             }
           }

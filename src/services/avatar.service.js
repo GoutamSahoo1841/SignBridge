@@ -308,19 +308,52 @@ export function initAvatar(containerOrCanvas, onProgress, onError) {
         scene.add(model)
         sceneState.model = model
 
-        // Locate skeleton shoulders to calibrate IK dynamically
-        // Uses exact _JNT bone names from this avatar's rig
-        const RPM_RIGHT = new Set(['r_arm_JNT', 'r_shoulder_JNT', 'RightArm', 'RightShoulder', 'mixamorigRightArm', 'mixamorigRightShoulder'])
-        const RPM_LEFT  = new Set(['l_arm_JNT', 'l_shoulder_JNT', 'LeftArm',  'LeftShoulder',  'mixamorigLeftArm',  'mixamorigLeftShoulder'])
+        // Bone name sets — broad list covers standard, _JNT, and mixamorig conventions
+        const RIGHT_ARM_SET = new Set(['RightArm', 'RightShoulder', 'r_arm_JNT', 'r_shoulder_JNT', 'mixamorigRightArm'])
+        const LEFT_ARM_SET  = new Set(['LeftArm',  'LeftShoulder',  'l_arm_JNT', 'l_shoulder_JNT', 'mixamorigLeftArm'])
+
+        // Locate shoulder world positions for IK calibration
+        // Also fix backwards hand orientation: some avatars are exported with shoulders rotated
+        // 180° around Y, causing palms to face backwards. Detect and correct this automatically.
+        let shoulderYFlip = false
+        const q180Y = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI)
+
         model.traverse((obj) => {
           if (obj.isBone || obj.type === 'Bone') {
-            if (RPM_RIGHT.has(obj.name)) {
+            if (RIGHT_ARM_SET.has(obj.name)) {
               obj.getWorldPosition(sceneState.shoulders.R)
-            } else if (RPM_LEFT.has(obj.name)) {
+              // Check if the shoulder's Y component is significantly negative (flipped)
+              // LeftShoulder quaternion y≈0.555 in this avatar indicates 180° Y rotation on the bind pose
+              if (Math.abs(obj.quaternion.y) > 0.4) {
+                shoulderYFlip = true
+              }
+            } else if (LEFT_ARM_SET.has(obj.name)) {
               obj.getWorldPosition(sceneState.shoulders.L)
             }
           }
         })
+
+        // If bind pose has hands facing backwards, apply corrective rotation to both forearms
+        // so they face forward (toward camera) in rest pose
+        if (shoulderYFlip) {
+          model.traverse((obj) => {
+            if (obj.isBone || obj.type === 'Bone') {
+              const n = obj.name
+              if (
+                n === 'RightArm' || n === 'LeftArm' ||
+                n === 'RightForeArm' || n === 'LeftForeArm' ||
+                n === 'RightHand' || n === 'LeftHand' ||
+                n === 'r_arm_JNT' || n === 'l_arm_JNT' ||
+                n === 'r_forearm_JNT' || n === 'l_forearm_JNT' ||
+                n === 'r_hand_JNT' || n === 'l_hand_JNT'
+              ) {
+                obj.quaternion.premultiply(q180Y)
+                obj.updateMatrixWorld(true)
+              }
+            }
+          })
+          console.log('[Avatar] Applied 180° Y correction to arm/hand bones (backwards bind pose detected)')
+        }
 
         // Setup AnimationMixer
         const mixer = new THREE.AnimationMixer(model)

@@ -309,9 +309,9 @@ export function initAvatar(containerOrCanvas, onProgress, onError) {
         sceneState.model = model
 
         // Locate skeleton shoulders to calibrate IK dynamically
-        // Supports both standard rigged models and Ready Player Me bone naming conventions
-        const RPM_RIGHT = new Set(['RightArm', 'RightShoulder', 'mixamorigRightArm', 'mixamorigRightShoulder'])
-        const RPM_LEFT  = new Set(['LeftArm',  'LeftShoulder',  'mixamorigLeftArm',  'mixamorigLeftShoulder'])
+        // Uses exact _JNT bone names from this avatar's rig
+        const RPM_RIGHT = new Set(['r_arm_JNT', 'r_shoulder_JNT', 'RightArm', 'RightShoulder', 'mixamorigRightArm', 'mixamorigRightShoulder'])
+        const RPM_LEFT  = new Set(['l_arm_JNT', 'l_shoulder_JNT', 'LeftArm',  'LeftShoulder',  'mixamorigLeftArm',  'mixamorigLeftShoulder'])
         model.traverse((obj) => {
           if (obj.isBone || obj.type === 'Bone') {
             if (RPM_RIGHT.has(obj.name)) {

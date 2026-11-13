@@ -5,41 +5,41 @@
  */
 import * as THREE from 'three'
 
-// ---- Joint Names for Humanoid Model ----
+// ---- Joint Names — mapped to actual GLB bone names (_JNT convention) ----
 export const BONES = {
   // Spine & Head
-  Hips: 'Hips',
-  Spine: 'Spine',
-  Spine1: 'Spine1',
-  Spine2: 'Spine2',
-  Neck: 'Neck',
-  Head: 'Head',
+  Hips: 'hips_JNT',
+  Spine: 'spine_JNT',
+  Spine1: 'spine1_JNT',
+  Spine2: 'spine2_JNT',
+  Neck: 'neck_JNT',
+  Head: 'head_JNT',
 
   // Right Arm
-  RightShoulder: 'RightShoulder',
-  RightArm: 'RightArm',
-  RightForeArm: 'RightForeArm',
-  RightHand: 'RightHand',
+  RightShoulder: 'r_shoulder_JNT',
+  RightArm: 'r_arm_JNT',
+  RightForeArm: 'r_forearm_JNT',
+  RightHand: 'r_hand_JNT',
 
   // Right Fingers
-  RightThumb: ['RightHandThumb1', 'RightHandThumb2', 'RightHandThumb3'],
-  RightIndex: ['RightHandIndex1', 'RightHandIndex2', 'RightHandIndex3'],
-  RightMiddle: ['RightHandMiddle1', 'RightHandMiddle2', 'RightHandMiddle3'],
-  RightRing: ['RightHandRing1', 'RightHandRing2', 'RightHandRing3'],
-  RightPinky: ['RightHandPinky1', 'RightHandPinky2', 'RightHandPinky3'],
+  RightThumb: ['r_handThumb1_JNT', 'r_handThumb2_JNT', 'r_handThumb3_JNT'],
+  RightIndex: ['r_handIndex1_JNT', 'r_handIndex2_JNT', 'r_handIndex3_JNT'],
+  RightMiddle: ['r_handMiddle1_JNT', 'r_handMiddle2_JNT', 'r_handMiddle3_JNT'],
+  RightRing: ['r_handRing1_JNT', 'r_handRing2_JNT', 'r_handRing3_JNT'],
+  RightPinky: ['r_handPinky1_JNT', 'r_handPinky2_JNT', 'r_handPinky3_JNT'],
 
   // Left Arm
-  LeftShoulder: 'LeftShoulder',
-  LeftArm: 'LeftArm',
-  LeftForeArm: 'LeftForeArm',
-  LeftHand: 'LeftHand',
+  LeftShoulder: 'l_shoulder_JNT',
+  LeftArm: 'l_arm_JNT',
+  LeftForeArm: 'l_forearm_JNT',
+  LeftHand: 'l_hand_JNT',
 
   // Left Fingers
-  LeftThumb: ['LeftHandThumb1', 'LeftHandThumb2', 'LeftHandThumb3'],
-  LeftIndex: ['LeftHandIndex1', 'LeftHandIndex2', 'LeftHandIndex3'],
-  LeftMiddle: ['LeftHandMiddle1', 'LeftHandMiddle2', 'LeftHandMiddle3'],
-  LeftRing: ['LeftHandRing1', 'LeftHandRing2', 'LeftHandRing3'],
-  LeftPinky: ['LeftHandPinky1', 'LeftHandPinky2', 'LeftHandPinky3'],
+  LeftThumb: ['l_handThumb1_JNT', 'l_handThumb2_JNT', 'l_handThumb3_JNT'],
+  LeftIndex: ['l_handIndex1_JNT', 'l_handIndex2_JNT', 'l_handIndex3_JNT'],
+  LeftMiddle: ['l_handMiddle1_JNT', 'l_handMiddle2_JNT', 'l_handMiddle3_JNT'],
+  LeftRing: ['l_handRing1_JNT', 'l_handRing2_JNT', 'l_handRing3_JNT'],
+  LeftPinky: ['l_handPinky1_JNT', 'l_handPinky2_JNT', 'l_handPinky3_JNT'],
 }
 
 // Finger order: [thumb, index, middle, ring, pinky]
@@ -306,12 +306,12 @@ export function getFingerQuaternions(shapeKey, isLeft = false) {
     })
   }
 
-  const prefix = isLeft ? 'LeftHand' : 'RightHand'
-  applyFinger([`${prefix}Thumb1`, `${prefix}Thumb2`, `${prefix}Thumb3`], shape.thumb)
-  applyFinger([`${prefix}Index1`, `${prefix}Index2`, `${prefix}Index3`], shape.index)
-  applyFinger([`${prefix}Middle1`, `${prefix}Middle2`, `${prefix}Middle3`], shape.middle)
-  applyFinger([`${prefix}Ring1`, `${prefix}Ring2`, `${prefix}Ring3`], shape.ring)
-  applyFinger([`${prefix}Pinky1`, `${prefix}Pinky2`, `${prefix}Pinky3`], shape.pinky)
+  const prefix = isLeft ? 'l_hand' : 'r_hand'
+  applyFinger([`${prefix}Thumb1_JNT`, `${prefix}Thumb2_JNT`, `${prefix}Thumb3_JNT`], shape.thumb)
+  applyFinger([`${prefix}Index1_JNT`, `${prefix}Index2_JNT`, `${prefix}Index3_JNT`], shape.index)
+  applyFinger([`${prefix}Middle1_JNT`, `${prefix}Middle2_JNT`, `${prefix}Middle3_JNT`], shape.middle)
+  applyFinger([`${prefix}Ring1_JNT`, `${prefix}Ring2_JNT`, `${prefix}Ring3_JNT`], shape.ring)
+  applyFinger([`${prefix}Pinky1_JNT`, `${prefix}Pinky2_JNT`, `${prefix}Pinky3_JNT`], shape.pinky)
 
   return quats
 }
@@ -751,14 +751,14 @@ export function createSignClip(gloss, shoulderR, shoulderL) {
     const ikR = solveArmIK(sR, rWrist, poleR, false)
     const qHandR = solveHandOrientation(kf.rOrient || 'UX', false)
 
-    initTrack('RightArm.quaternion')
-    tracks['RightArm.quaternion'].push(ikR.qArm.x, ikR.qArm.y, ikR.qArm.z, ikR.qArm.w)
+    initTrack('r_arm_JNT.quaternion')
+    tracks['r_arm_JNT.quaternion'].push(ikR.qArm.x, ikR.qArm.y, ikR.qArm.z, ikR.qArm.w)
 
-    initTrack('RightForeArm.quaternion')
-    tracks['RightForeArm.quaternion'].push(ikR.qFore.x, ikR.qFore.y, ikR.qFore.z, ikR.qFore.w)
+    initTrack('r_forearm_JNT.quaternion')
+    tracks['r_forearm_JNT.quaternion'].push(ikR.qFore.x, ikR.qFore.y, ikR.qFore.z, ikR.qFore.w)
 
-    initTrack('RightHand.quaternion')
-    tracks['RightHand.quaternion'].push(qHandR.x, qHandR.y, qHandR.z, qHandR.w)
+    initTrack('r_hand_JNT.quaternion')
+    tracks['r_hand_JNT.quaternion'].push(qHandR.x, qHandR.y, qHandR.z, qHandR.w)
 
     // Right Fingers
     const rFingers = getFingerQuaternions(kf.rShape || 'B', false)
@@ -774,14 +774,14 @@ export function createSignClip(gloss, shoulderR, shoulderL) {
       const ikL = solveArmIK(sL, lWrist, poleL, true)
       const qHandL = solveHandOrientation(kf.lOrient || 'UX', true)
 
-      initTrack('LeftArm.quaternion')
-      tracks['LeftArm.quaternion'].push(ikL.qArm.x, ikL.qArm.y, ikL.qArm.z, ikL.qArm.w)
+      initTrack('l_arm_JNT.quaternion')
+      tracks['l_arm_JNT.quaternion'].push(ikL.qArm.x, ikL.qArm.y, ikL.qArm.z, ikL.qArm.w)
 
-      initTrack('LeftForeArm.quaternion')
-      tracks['LeftForeArm.quaternion'].push(ikL.qFore.x, ikL.qFore.y, ikL.qFore.z, ikL.qFore.w)
+      initTrack('l_forearm_JNT.quaternion')
+      tracks['l_forearm_JNT.quaternion'].push(ikL.qFore.x, ikL.qFore.y, ikL.qFore.z, ikL.qFore.w)
 
-      initTrack('LeftHand.quaternion')
-      tracks['LeftHand.quaternion'].push(qHandL.x, qHandL.y, qHandL.z, qHandL.w)
+      initTrack('l_hand_JNT.quaternion')
+      tracks['l_hand_JNT.quaternion'].push(qHandL.x, qHandL.y, qHandL.z, qHandL.w)
 
       const lFingers = getFingerQuaternions(kf.lShape || 'B', true)
       Object.entries(lFingers).forEach(([bName, q]) => {
@@ -794,14 +794,14 @@ export function createSignClip(gloss, shoulderR, shoulderL) {
       const ikL = solveArmIK(sL, REST_POSE.leftWrist, poleL, true)
       const qHandL = solveHandOrientation('RS', true)
 
-      initTrack('LeftArm.quaternion')
-      tracks['LeftArm.quaternion'].push(ikL.qArm.x, ikL.qArm.y, ikL.qArm.z, ikL.qArm.w)
+      initTrack('l_arm_JNT.quaternion')
+      tracks['l_arm_JNT.quaternion'].push(ikL.qArm.x, ikL.qArm.y, ikL.qArm.z, ikL.qArm.w)
 
-      initTrack('LeftForeArm.quaternion')
-      tracks['LeftForeArm.quaternion'].push(ikL.qFore.x, ikL.qFore.y, ikL.qFore.z, ikL.qFore.w)
+      initTrack('l_forearm_JNT.quaternion')
+      tracks['l_forearm_JNT.quaternion'].push(ikL.qFore.x, ikL.qFore.y, ikL.qFore.z, ikL.qFore.w)
 
-      initTrack('LeftHand.quaternion')
-      tracks['LeftHand.quaternion'].push(qHandL.x, qHandL.y, qHandL.z, qHandL.w)
+      initTrack('l_hand_JNT.quaternion')
+      tracks['l_hand_JNT.quaternion'].push(qHandL.x, qHandL.y, qHandL.z, qHandL.w)
 
       const lFingers = getFingerQuaternions('RL', true)
       Object.entries(lFingers).forEach(([bName, q]) => {
@@ -815,8 +815,8 @@ export function createSignClip(gloss, shoulderR, shoulderL) {
     const headNod = kf.headNod || 0
     const headShake = kf.headShake || 0
     const qHead = new THREE.Quaternion().setFromEuler(new THREE.Euler(headNod, headShake, 0, 'XYZ'))
-    initTrack('Head.quaternion')
-    tracks['Head.quaternion'].push(qHead.x, qHead.y, qHead.z, qHead.w)
+    initTrack('head_JNT.quaternion')
+    tracks['head_JNT.quaternion'].push(qHead.x, qHead.y, qHead.z, qHead.w)
   })
 
   // Assemble THREE.KeyframeTrack objects
@@ -857,19 +857,19 @@ export function createFingerspellClip(word) {
   const startIK_L = solveArmIK(sL, REST_POSE.leftWrist, poleL, true)
   const qRest = solveHandOrientation('RS', false)
 
-  initTrack('RightArm.quaternion')
-  tracks['RightArm.quaternion'].push(startIK_R.qArm.x, startIK_R.qArm.y, startIK_R.qArm.z, startIK_R.qArm.w)
-  initTrack('RightForeArm.quaternion')
-  tracks['RightForeArm.quaternion'].push(startIK_R.qFore.x, startIK_R.qFore.y, startIK_R.qFore.z, startIK_R.qFore.w)
-  initTrack('RightHand.quaternion')
-  tracks['RightHand.quaternion'].push(qRest.x, qRest.y, qRest.z, qRest.w)
+  initTrack('r_arm_JNT.quaternion')
+  tracks['r_arm_JNT.quaternion'].push(startIK_R.qArm.x, startIK_R.qArm.y, startIK_R.qArm.z, startIK_R.qArm.w)
+  initTrack('r_forearm_JNT.quaternion')
+  tracks['r_forearm_JNT.quaternion'].push(startIK_R.qFore.x, startIK_R.qFore.y, startIK_R.qFore.z, startIK_R.qFore.w)
+  initTrack('r_hand_JNT.quaternion')
+  tracks['r_hand_JNT.quaternion'].push(qRest.x, qRest.y, qRest.z, qRest.w)
 
-  initTrack('LeftArm.quaternion')
-  tracks['LeftArm.quaternion'].push(startIK_L.qArm.x, startIK_L.qArm.y, startIK_L.qArm.z, startIK_L.qArm.w)
-  initTrack('LeftForeArm.quaternion')
-  tracks['LeftForeArm.quaternion'].push(startIK_L.qFore.x, startIK_L.qFore.y, startIK_L.qFore.z, startIK_L.qFore.w)
-  initTrack('LeftHand.quaternion')
-  tracks['LeftHand.quaternion'].push(qRest.x, qRest.y, qRest.z, qRest.w)
+  initTrack('l_arm_JNT.quaternion')
+  tracks['l_arm_JNT.quaternion'].push(startIK_L.qArm.x, startIK_L.qArm.y, startIK_L.qArm.z, startIK_L.qArm.w)
+  initTrack('l_forearm_JNT.quaternion')
+  tracks['l_forearm_JNT.quaternion'].push(startIK_L.qFore.x, startIK_L.qFore.y, startIK_L.qFore.z, startIK_L.qFore.w)
+  initTrack('l_hand_JNT.quaternion')
+  tracks['l_hand_JNT.quaternion'].push(qRest.x, qRest.y, qRest.z, qRest.w)
 
   letters.forEach((letter, i) => {
     const t = 0.2 + i * letterDuration
@@ -880,9 +880,9 @@ export function createFingerspellClip(word) {
     const ikR = solveArmIK(sR, pos, poleR, false)
     const qHand = solveHandOrientation('UO', false)
 
-    tracks['RightArm.quaternion'].push(ikR.qArm.x, ikR.qArm.y, ikR.qArm.z, ikR.qArm.w)
-    tracks['RightForeArm.quaternion'].push(ikR.qFore.x, ikR.qFore.y, ikR.qFore.z, ikR.qFore.w)
-    tracks['RightHand.quaternion'].push(qHand.x, qHand.y, qHand.z, qHand.w)
+    tracks['r_arm_JNT.quaternion'].push(ikR.qArm.x, ikR.qArm.y, ikR.qArm.z, ikR.qArm.w)
+    tracks['r_forearm_JNT.quaternion'].push(ikR.qFore.x, ikR.qFore.y, ikR.qFore.z, ikR.qFore.w)
+    tracks['r_hand_JNT.quaternion'].push(qHand.x, qHand.y, qHand.z, qHand.w)
 
     // Fingers for this ASL letter
     const fR = getFingerQuaternions(letter, false)
@@ -893,19 +893,19 @@ export function createFingerspellClip(word) {
     })
 
     // Left arm remains relaxed
-    tracks['LeftArm.quaternion'].push(startIK_L.qArm.x, startIK_L.qArm.y, startIK_L.qArm.z, startIK_L.qArm.w)
-    tracks['LeftForeArm.quaternion'].push(startIK_L.qFore.x, startIK_L.qFore.y, startIK_L.qFore.z, startIK_L.qFore.w)
-    tracks['LeftHand.quaternion'].push(qRest.x, qRest.y, qRest.z, qRest.w)
+    tracks['l_arm_JNT.quaternion'].push(startIK_L.qArm.x, startIK_L.qArm.y, startIK_L.qArm.z, startIK_L.qArm.w)
+    tracks['l_forearm_JNT.quaternion'].push(startIK_L.qFore.x, startIK_L.qFore.y, startIK_L.qFore.z, startIK_L.qFore.w)
+    tracks['l_hand_JNT.quaternion'].push(qRest.x, qRest.y, qRest.z, qRest.w)
   })
 
   // Return to rest
   times.push(duration)
-  tracks['RightArm.quaternion'].push(startIK_R.qArm.x, startIK_R.qArm.y, startIK_R.qArm.z, startIK_R.qArm.w)
-  tracks['RightForeArm.quaternion'].push(startIK_R.qFore.x, startIK_R.qFore.y, startIK_R.qFore.z, startIK_R.qFore.w)
-  tracks['RightHand.quaternion'].push(qRest.x, qRest.y, qRest.z, qRest.w)
-  tracks['LeftArm.quaternion'].push(startIK_L.qArm.x, startIK_L.qArm.y, startIK_L.qArm.z, startIK_L.qArm.w)
-  tracks['LeftForeArm.quaternion'].push(startIK_L.qFore.x, startIK_L.qFore.y, startIK_L.qFore.z, startIK_L.qFore.w)
-  tracks['LeftHand.quaternion'].push(qRest.x, qRest.y, qRest.z, qRest.w)
+  tracks['r_arm_JNT.quaternion'].push(startIK_R.qArm.x, startIK_R.qArm.y, startIK_R.qArm.z, startIK_R.qArm.w)
+  tracks['r_forearm_JNT.quaternion'].push(startIK_R.qFore.x, startIK_R.qFore.y, startIK_R.qFore.z, startIK_R.qFore.w)
+  tracks['r_hand_JNT.quaternion'].push(qRest.x, qRest.y, qRest.z, qRest.w)
+  tracks['l_arm_JNT.quaternion'].push(startIK_L.qArm.x, startIK_L.qArm.y, startIK_L.qArm.z, startIK_L.qArm.w)
+  tracks['l_forearm_JNT.quaternion'].push(startIK_L.qFore.x, startIK_L.qFore.y, startIK_L.qFore.z, startIK_L.qFore.w)
+  tracks['l_hand_JNT.quaternion'].push(qRest.x, qRest.y, qRest.z, qRest.w)
 
   const clipTracks = []
   const timesArray = new Float32Array(times)
@@ -936,19 +936,19 @@ export function createIdleClip() {
 
   const rep = (q) => new Float32Array([q.x, q.y, q.z, q.w, q.x, q.y, q.z, q.w, q.x, q.y, q.z, q.w])
 
-  tracks.push(new THREE.QuaternionKeyframeTrack('RightArm.quaternion', times, rep(ikR.qArm)))
-  tracks.push(new THREE.QuaternionKeyframeTrack('RightForeArm.quaternion', times, rep(ikR.qFore)))
-  tracks.push(new THREE.QuaternionKeyframeTrack('RightHand.quaternion', times, rep(qR)))
-  tracks.push(new THREE.QuaternionKeyframeTrack('LeftArm.quaternion', times, rep(ikL.qArm)))
-  tracks.push(new THREE.QuaternionKeyframeTrack('LeftForeArm.quaternion', times, rep(ikL.qFore)))
-  tracks.push(new THREE.QuaternionKeyframeTrack('LeftHand.quaternion', times, rep(qL)))
+  tracks.push(new THREE.QuaternionKeyframeTrack('r_arm_JNT.quaternion', times, rep(ikR.qArm)))
+  tracks.push(new THREE.QuaternionKeyframeTrack('r_forearm_JNT.quaternion', times, rep(ikR.qFore)))
+  tracks.push(new THREE.QuaternionKeyframeTrack('r_hand_JNT.quaternion', times, rep(qR)))
+  tracks.push(new THREE.QuaternionKeyframeTrack('l_arm_JNT.quaternion', times, rep(ikL.qArm)))
+  tracks.push(new THREE.QuaternionKeyframeTrack('l_forearm_JNT.quaternion', times, rep(ikL.qFore)))
+  tracks.push(new THREE.QuaternionKeyframeTrack('l_hand_JNT.quaternion', times, rep(qL)))
 
   // Subtle natural spine breathing oscillation
   const qSpine0 = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, 0))
   const qSpine1 = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.015, 0, 0))
   tracks.push(
     new THREE.QuaternionKeyframeTrack(
-      'Spine1.quaternion',
+      'spine1_JNT.quaternion',
       times,
       new Float32Array([
         qSpine0.x, qSpine0.y, qSpine0.z, qSpine0.w,

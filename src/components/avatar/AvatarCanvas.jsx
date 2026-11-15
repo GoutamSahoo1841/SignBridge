@@ -5,20 +5,11 @@ export default function AvatarCanvas({ onGlossChange, style, className = '' }) {
   const canvasRef = useRef(null)
 
   useEffect(() => {
-    let mounted = true
-    const checkThree = async () => {
-      for (let i = 0; i < 30; i++) {
-        if (window.THREE) break
-        await new Promise((r) => setTimeout(r, 200))
-      }
-      if (mounted && canvasRef.current && window.THREE) {
-        initAvatar(canvasRef.current, onGlossChange)
-      }
+    if (canvasRef.current) {
+      initAvatar(canvasRef.current, onGlossChange)
     }
-    checkThree()
 
     return () => {
-      mounted = false
       destroyAvatar()
     }
   }, [onGlossChange])

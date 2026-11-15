@@ -5,12 +5,15 @@
  * animated mouth & head, complete ASL lexicon (75+ signs), and fingerspelling.
  */
 
-// Helper to access THREE from window.THREE
+import * as THREE from 'three'
+
+if (typeof window !== 'undefined') {
+  window.THREE = THREE
+}
+
+// Access Three.js directly from npm bundle
 function getThree() {
-  if (typeof window !== 'undefined' && window.THREE) {
-    return window.THREE
-  }
-  return null
+  return THREE
 }
 
 // Hand shape codes (thumb, index, mid, ring, pinky curl 0-9; last digit = finger spread)

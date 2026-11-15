@@ -36,36 +36,16 @@ export default function AvatarPage() {
   useEffect(() => {
     let mounted = true
 
-    const tryInit = async () => {
-      // Wait for THREE from window.THREE
-      for (let i = 0; i < 30; i++) {
-        if (window.THREE) break
-        await new Promise((r) => setTimeout(r, 200))
+    try {
+      if (canvasRef.current) {
+        avatarService.initAvatar(canvasRef.current, handleGlossChange)
+        setReady(true)
       }
-
-      if (!window.THREE) {
-        if (mounted) {
-          setError(
-            'Three.js did not load. Make sure /assets/three.min.js is present and the page is served over HTTP(S).'
-          )
-        }
-        return
-      }
-
-      try {
-        if (canvasRef.current && mounted) {
-          avatarService.initAvatar(canvasRef.current, handleGlossChange)
-          setReady(true)
-        }
-      } catch (e) {
-        if (mounted) setError('Avatar error: ' + e.message)
-      }
+    } catch (e) {
+      setError('Avatar error: ' + e.message)
     }
 
-    tryInit()
-
     return () => {
-      mounted = false
       avatarService.destroyAvatar()
     }
   }, [handleGlossChange])

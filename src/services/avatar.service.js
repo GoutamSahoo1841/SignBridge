@@ -1,27 +1,135 @@
 /**
  * Avatar Service
- * Three.js Realistic Human Signing Avatar using GLTFLoader, rigged skeletal animation,
- * AnimationMixer, sequential sign-gloss execution, and real-time playback controls.
+ * Three.js 3D ASL Signing Avatar directly ported from SignBridge-Complete.
+ * Features procedural anatomy, articulated 5-finger hands, 2-bone IK arms,
+ * animated mouth & head, complete ASL lexicon (75+ signs), and fingerspelling.
  */
-import * as THREE from 'three'
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
-import {
-  createSignClip,
-  createIdleClip,
-  isSignSupported,
-  SIGN_LEXICON,
-} from './signAnimation.service.js'
 
-// ---- English → Gloss mapping (Preserved from original SignBridge) ----
+// Helper to access THREE from window.THREE
+function getThree() {
+  if (typeof window !== 'undefined' && window.THREE) {
+    return window.THREE
+  }
+  return null
+}
 
+// Hand shape codes (thumb, index, mid, ring, pinky curl 0-9; last digit = finger spread)
+const SH = {
+  A: '099990', B: '700000', C: '444440', D: '506660', E: '888880', F: '560001',
+  G: '309990', H: '300990', I: '799900', J: '799900', K: '300991', L: '009990',
+  M: '899990', N: '899990', O: '666660', P: '300991', Q: '309990', R: '700990',
+  S: '899990', T: '899990', U: '700990', V: '700991', W: '700091', X: '749990',
+  Y: '099900', Z: '709990', P1: '709990', HN: '300990', C5: '444441', F5: '000001',
+  RL: '333330', ILY: '009900',
+}
+
+// Orientation presets: [finger direction, palm normal] for the RIGHT hand, world axes
+const O = {
+  UO: [[0, 1, 0], [0, 0, 1]],
+  US: [[0, 1, 0], [0, 0, -1]],
+  UI: [[0, 1, 0], [1, 0, 0]],
+  UX: [[0, 1, 0], [-1, 0, 0]],
+  FD: [[0, 0, 1], [0, -1, 0]],
+  FU: [[0, 0, 1], [0, 1, 0]],
+  FI: [[0, 0, 1], [1, 0, 0]],
+  TS: [[0, 0, -1], [1, 0, 0]],
+  RS: [[0, -1, 0.1], [1, 0, 0]],
+  OX: [[-1, 0, 0], [0, -1, 0]],
+}
+
+// Sign lexicon: keyframes "shape|dx,y,z|orientation" (dx = outward from body midline).
+// b: 1 = both hands mirrored, l = explicit left hand
+export const SG = {
+  HELLO: { k: ['B|.12,1.74,.2|UX', 'B|.4,1.7,.4|UX'] },
+  THANKYOU: { k: ['B|.03,1.5,.26|US', 'B|.12,1.38,.5|FU'] },
+  PLEASE: { k: ['B|.1,1.34,.2|US', 'B|0,1.26,.2|US', 'B|.1,1.2,.2|US', 'B|.2,1.28,.2|US'] },
+  SORRY: { k: ['S|.1,1.34,.2|US', 'S|0,1.26,.2|US', 'S|.1,1.2,.2|US', 'S|.2,1.28,.2|US'] },
+  YES: { k: ['S|.2,1.4,.4|UO', 'S|.2,1.35,.45|FD', 'S|.2,1.4,.4|UO', 'S|.2,1.35,.45|FD'] },
+  NO: { k: ['HN|.2,1.4,.45|FI', 'H|.2,1.4,.45|FI', 'HN|.2,1.4,.45|FI', 'H|.2,1.4,.45|FI'] },
+  ME: { k: ['P1|.12,1.4,.4|TS', 'P1|.1,1.36,.28|TS'] },
+  YOU: { k: ['P1|.2,1.36,.35|FI', 'P1|.2,1.36,.55|FI'] },
+  MY: { k: ['B|.1,1.32,.22|US'] },
+  WANT: { b: 1, k: ['C5|.22,1.3,.55|FU', 'C5|.16,1.3,.3|FU'] },
+  NEED: { k: ['X|.2,1.45,.45|UO', 'X|.2,1.28,.45|UO'] },
+  HELP: { k: ['A|.05,1.3,.42|UI', 'A|.05,1.46,.42|UI'], l: ['B|.05,1.2,.42|FU', 'B|.05,1.2,.42|FU'] },
+  WATER: { k: ['W|.04,1.52,.26|UO', 'W|.04,1.46,.3|UO', 'W|.04,1.52,.26|UO', 'W|.04,1.46,.3|UO'] },
+  EAT: { k: ['O|.08,1.5,.3|UI', 'O|.04,1.58,.25|UI', 'O|.08,1.5,.3|UI', 'O|.04,1.58,.25|UI'] },
+  DRINK: { k: ['C|.14,1.42,.38|UI', 'C|.06,1.56,.3|US'] },
+  GO: { b: 1, k: ['P1|.15,1.3,.3|FD', 'P1|.15,1.3,.62|FD'] },
+  COME: { b: 1, k: ['P1|.15,1.3,.62|FU', 'P1|.12,1.3,.3|FU'] },
+  GOOD: { k: ['B|.03,1.5,.26|US', 'B|.1,1.3,.4|FU'], l: ['B|.1,1.26,.42|FU', 'B|.1,1.26,.42|FU'] },
+  BAD: { k: ['B|.03,1.5,.26|US', 'B|.15,1.28,.42|FD'] },
+  LOVE: { b: 1, k: ['S|-.08,1.32,.25|US', 'S|-.08,1.32,.25|US'] },
+  HOME: { k: ['O|.06,1.5,.28|UI', 'O|.14,1.62,.2|UI'] },
+  NAME: { k: ['H|.05,1.42,.45|FD', 'H|.05,1.36,.45|FD'], l: ['H|.05,1.3,.45|FI', 'H|.05,1.3,.45|FI'] },
+  WHAT: { b: 1, k: ['F5|.2,1.3,.4|FU', 'F5|.3,1.3,.4|FU', 'F5|.2,1.3,.4|FU'] },
+  WHERE: { k: ['P1|.2,1.5,.45|UO', 'P1|.32,1.5,.45|UO', 'P1|.2,1.5,.45|UO', 'P1|.32,1.5,.45|UO'] },
+  HOW: { b: 1, k: ['S|.06,1.3,.42|US', 'S|.1,1.4,.5|FU'] },
+  UNDERSTAND: { k: ['S|.12,1.66,.22|UO', 'P1|.12,1.68,.22|UO'] },
+  KNOW: { k: ['B|.1,1.66,.22|UI', 'B|.12,1.7,.24|UI'] },
+  PAIN: { b: 1, k: ['P1|.12,1.34,.4|UI', 'P1|.06,1.4,.4|UI'] },
+  MORNING: { k: ['B|.15,1.2,.42|FU', 'B|.15,1.42,.42|FU'], l: ['B|.1,1.3,.42|FI', 'B|.1,1.3,.42|FI'] },
+  NIGHT: { k: ['C|.1,1.46,.4|FD', 'C|.1,1.35,.38|FD'], l: ['B|.1,1.3,.4|FD', 'B|.1,1.3,.4|FD'] },
+  NOW: { b: 1, k: ['Y|.15,1.35,.4|FU', 'Y|.15,1.25,.4|FU'] },
+  TOMORROW: { k: ['A|.08,1.68,.22|UI', 'A|.12,1.62,.4|UI'] },
+  YESTERDAY: { k: ['A|.06,1.65,.24|UI', 'A|.12,1.7,.12|UI'] },
+  WAIT: { b: 1, k: ['F5|.15,1.3,.4|FU', 'F5|.2,1.3,.45|FU', 'F5|.15,1.3,.4|FU'] },
+  STOP: { k: ['B|.05,1.45,.42|UI', 'B|.05,1.3,.42|UI'], l: ['B|.05,1.25,.42|FU', 'B|.05,1.25,.42|FU'] },
+  WORK: { k: ['S|.05,1.34,.42|FD', 'S|.05,1.3,.42|FD', 'S|.05,1.34,.42|FD', 'S|.05,1.3,.42|FD'], l: ['S|.05,1.25,.42|FD', 'S|.05,1.25,.42|FD', 'S|.05,1.25,.42|FD', 'S|.05,1.25,.42|FD'] },
+  SCHOOL: { k: ['B|.05,1.4,.42|FD', 'B|.05,1.3,.42|FD', 'B|.05,1.4,.42|FD', 'B|.05,1.3,.42|FD'], l: ['B|.05,1.27,.42|FU', 'B|.05,1.27,.42|FU', 'B|.05,1.27,.42|FU', 'B|.05,1.27,.42|FU'] },
+  FRIEND: { b: 1, k: ['X|.04,1.3,.42|FI', 'X|.04,1.26,.42|FI'] },
+  FAMILY: { b: 1, k: ['F|.1,1.3,.42|UO', 'F|.25,1.3,.42|US'] },
+  MOTHER: { k: ['F5|.04,1.5,.26|UO', 'F5|.04,1.48,.27|UO', 'F5|.04,1.5,.26|UO'] },
+  FATHER: { k: ['F5|.08,1.78,.22|UO', 'F5|.08,1.76,.23|UO', 'F5|.08,1.78,.22|UO'] },
+  SLEEP: { k: ['F5|.05,1.62,.26|US', 'O|.05,1.5,.26|US'] },
+  TIRED: { b: 1, k: ['C5|.15,1.38,.25|US', 'C5|.2,1.27,.25|US'] },
+  SICK: { k: ['H|.06,1.76,.22|UO', 'H|.1,1.2,.25|UO'] },
+  DOCTOR: { k: ['H|.06,1.3,.42|FD', 'H|.06,1.25,.42|FD', 'H|.06,1.3,.42|FD'], l: ['B|.06,1.2,.42|FU', 'B|.06,1.2,.42|FU', 'B|.06,1.2,.42|FU'] },
+  FINE: { k: ['F5|.12,1.36,.22|UO', 'F5|.1,1.32,.22|UO'] },
+  HAPPY: { b: 1, k: ['B|.15,1.2,.22|US', 'B|.15,1.38,.22|US', 'B|.15,1.2,.22|US', 'B|.15,1.38,.22|US'] },
+  SAD: { b: 1, k: ['B|.12,1.72,.35|US', 'B|.12,1.45,.35|US'] },
+  ANGRY: { b: 1, k: ['C5|.1,1.65,.35|US', 'C5|.14,1.58,.28|US'] },
+  LIKE: { k: ['F|.1,1.32,.25|UI', 'F|.15,1.32,.4|UI'] },
+  HAVE: { b: 1, k: ['C5|.15,1.3,.4|FD', 'C5|.08,1.3,.25|FD'] },
+  GIVE: { k: ['O|.15,1.3,.3|FD', 'O|.18,1.3,.55|FD'] },
+  SEE: { k: ['V|.04,1.74,.22|UI', 'V|.1,1.72,.45|FI'] },
+  HEAR: { k: ['P1|.14,1.72,.15|UO', 'P1|.14,1.72,.15|UO'] },
+  TALK: { k: ['B|.05,1.58,.25|UO', 'B|.1,1.56,.4|UO', 'B|.05,1.58,.25|UO'] },
+  THINK: { k: ['P1|.1,1.82,.2|UO', 'P1|.14,1.86,.22|UO'] },
+  READ: { k: ['V|.05,1.4,.42|FD', 'V|.05,1.3,.42|FD'], l: ['B|.05,1.25,.42|FI', 'B|.05,1.25,.42|FI'] },
+  BATHROOM: { k: ['T|.2,1.4,.42|UO', 'T|.26,1.4,.42|UO', 'T|.2,1.4,.42|UO', 'T|.26,1.4,.42|UO'] },
+  WELCOME: { k: ['B|.3,1.3,.5|FU', 'B|.05,1.3,.25|FU'] },
+  BYE: { k: ['B|.25,1.6,.4|UO', 'B|.32,1.6,.4|UO', 'B|.25,1.6,.4|UO', 'B|.32,1.6,.4|UO'] },
+  MEET: { b: 1, k: ['P1|.3,1.3,.4|UI', 'P1|.05,1.3,.4|UI'] },
+  NICE: { k: ['B|.05,1.3,.42|FU', 'B|.12,1.3,.5|FU'], l: ['B|.05,1.25,.42|FU', 'B|.05,1.25,.42|FU'] },
+  MORE: { b: 1, k: ['O|.15,1.3,.4|FU', 'O|.06,1.3,.42|FU', 'O|.15,1.3,.4|FU', 'O|.06,1.3,.42|FU'] },
+  FINISH: { b: 1, k: ['F5|.2,1.3,.4|FU', 'F5|.2,1.3,.4|FD'] },
+  COLD: { b: 1, k: ['S|.1,1.3,.35|UI', 'S|.14,1.3,.35|UI', 'S|.1,1.3,.35|UI'] },
+  MILK: { k: ['C|.2,1.35,.4|UI', 'S|.2,1.35,.4|UI', 'C|.2,1.35,.4|UI', 'S|.2,1.35,.4|UI'] },
+  MONEY: { k: ['O|.06,1.34,.42|FU', 'O|.06,1.3,.42|FU', 'O|.06,1.34,.42|FU'], l: ['B|.06,1.25,.42|FU', 'B|.06,1.25,.42|FU', 'B|.06,1.25,.42|FU'] },
+  CAR: { b: 1, k: ['S|.15,1.3,.42|UI', 'S|.17,1.36,.42|UI', 'S|.15,1.3,.42|UI'] },
+  PHONE: { k: ['Y|.12,1.64,.2|UI', 'Y|.12,1.64,.2|UI'] },
+  BOOK: { b: 1, k: ['B|.05,1.3,.42|UI', 'B|.1,1.3,.42|UX'] },
+  WE: { k: ['P1|.25,1.45,.28|FI', 'P1|-.05,1.45,.28|FI'] },
+  HE: { k: ['P1|.3,1.35,.4|OX', 'P1|.34,1.35,.4|OX'] },
+  WHO: { k: ['P1|.05,1.55,.26|UO', 'P1|.08,1.52,.28|UO', 'P1|.05,1.55,.26|UO'] },
+  WHY: { k: ['B|.1,1.75,.2|UI', 'Y|.2,1.6,.3|UO'] },
+  ILY: { k: ['ILY|.2,1.5,.42|UO', 'ILY|.2,1.5,.45|UO'] },
+  OKAY: { k: ['F|.2,1.45,.42|UO', 'F|.2,1.45,.42|UO'] },
+  MAYBE: { k: ['B|.15,1.3,.42|FU', 'B|.15,1.4,.42|FU'], l: ['B|.15,1.4,.42|FU', 'B|.15,1.3,.42|FU'] },
+  HUNGRY: { k: ['C|.1,1.45,.28|US', 'C|.1,1.28,.28|US'] },
+  THIRSTY: { k: ['P1|.04,1.55,.26|UO', 'P1|.04,1.45,.26|UO'] },
+}
+
+// English -> Gloss translation map
 const MAP = {
   hello: 'HELLO', hi: 'HELLO', hey: 'HELLO', thanks: 'THANKYOU', thank: 'THANKYOU',
-  please: 'PLEASE', sorry: 'SORRY', yes: 'YES', yeah: 'YES', ok: 'YES', okay: 'OKAY',
+  please: 'PLEASE', sorry: 'SORRY', yes: 'YES', yeah: 'YES', ok: 'YES', okay: 'YES',
   no: 'NO', not: 'NO', dont: 'NO', cant: 'NO', i: 'ME', me: 'ME', im: 'ME', my: 'MY',
   mine: 'MY', you: 'YOU', your: 'YOU', youre: 'YOU', want: 'WANT', wants: 'WANT',
   need: 'NEED', needs: 'NEED', help: 'HELP', water: 'WATER', eat: 'EAT', food: 'EAT',
-  hungry: 'HUNGRY', drink: 'DRINK', go: 'GO', going: 'GO', come: 'COME', good: 'GOOD',
-  fine: 'FINE', well: 'GOOD', great: 'GOOD', bad: 'BAD', love: 'LOVE', home: 'HOME',
+  hungry: 'EAT', drink: 'DRINK', go: 'GO', going: 'GO', come: 'COME', good: 'GOOD',
+  fine: 'GOOD', well: 'GOOD', great: 'GOOD', bad: 'BAD', love: 'LOVE', home: 'HOME',
   house: 'HOME', name: 'NAME', what: 'WHAT', where: 'WHERE', how: 'HOW',
   understand: 'UNDERSTAND', know: 'KNOW', pain: 'PAIN', hurt: 'PAIN', hurts: 'PAIN',
   morning: 'MORNING', night: 'NIGHT', tonight: 'NIGHT', now: 'NOW', today: 'NOW',
@@ -63,22 +171,15 @@ const PH = [
 ]
 
 const DROP = new Set(
-  'a an the is am are be to of do does at on in was were been will would just so very really and with for from into this that there here'.split(
-    ' '
-  )
+  'a an the is am are be to of do does at on in was were been will would just so very really and with for from into this that there here'.split(' ')
 )
 
 export function toGloss(txt) {
-  let x = txt.toLowerCase().replace(/['']/g, '').replace(/[^a-z ]/g, ' ')
-  PH.forEach((p) => {
-    x = x.replace(p[0], p[1])
-  })
+  let x = txt.toLowerCase().replace(/['’]/g, '').replace(/[^a-z ]/g, ' ')
+  PH.forEach((p) => { x = x.replace(p[0], p[1]) })
   const out = []
   for (const w of x.split(/\s+/).filter(Boolean)) {
-    if (SIGN_LEXICON[w]) {
-      out.push(w)
-      continue
-    }
+    if (SG[w]) { out.push(w); continue }
     if (DROP.has(w)) continue
     const g = MAP[w] || MAP[w.replace(/(ing|ed|es|s)$/, '')]
     if (g === 'YOU' && out[out.length - 1] === 'THANKYOU') continue
@@ -91,24 +192,19 @@ export function toGloss(txt) {
 }
 
 // ---- Scene Instance State ----
-
 let sceneState = null
 const stateListeners = new Set()
 
 function notifyListeners() {
   const s = getState()
   stateListeners.forEach((fn) => {
-    try {
-      fn(s)
-    } catch (e) {
-      console.error('State listener error:', e)
-    }
+    try { fn(s) } catch (e) { console.error('Avatar listener error:', e) }
   })
 }
 
 export function subscribeAvatarState(fn) {
   stateListeners.add(fn)
-  if (sceneState) fn(getState())
+  fn(getState())
   return () => stateListeners.delete(fn)
 }
 
@@ -117,534 +213,446 @@ export function getState() {
     return {
       isLoaded: false,
       isPlaying: false,
-      isPaused: false,
       currentGloss: '',
       currentIndex: -1,
       totalGlosses: 0,
-      progress: 0,
-      speed: 1,
-      unsupported: [],
     }
+  }
+  return {
+    isLoaded: sceneState.isLoaded,
+    isPlaying: sceneState.playing,
+    currentGloss: sceneState.currentGloss,
+    currentIndex: sceneState.currentIndex,
+    totalGlosses: sceneState.gl.length,
+  }
+}
+
+// Helper to make hand state from string code
+function mkHandState(code, side, T) {
+  const sgn = [-1, 1]
+  const [sh, loc, o] = code.split('|')
+  const [x, y, z] = loc.split(',').map(Number)
+  const s = SH[sh] || SH.A
+  const c = [...s].map(Number).map((d, i) => (i < 5 ? d / 9 : d ? 1 : 0))
+
+  const odata = O[o] || O.UO
+  const f = new T.Vector3(...odata[0])
+  const n = new T.Vector3(...odata[1])
+
+  if (side) {
+    f.x *= -1
+    n.x *= -1
+  }
+
+  const Y = f.normalize()
+  const Z = n.sub(Y.clone().multiplyScalar(n.dot(Y))).normalize()
+  const X = Y.clone().cross(Z)
+
+  return {
+    p: new T.Vector3(sgn[side] * x, y, z),
+    q: new T.Quaternion().setFromRotationMatrix(new T.Matrix4().makeBasis(X, Y, Z)),
+    c,
+  }
+}
+
+function mkFinger(g, x, y, lens, r, skin, T) {
+  const b = new T.Group()
+  b.position.set(x, y, 0)
+  g.add(b)
+  let p = b
+  const j = []
+  for (const l of lens) {
+    const jt = new T.Group()
+    p.add(jt)
+    const m = new T.Mesh(new T.CylinderGeometry(r, r * 0.9, l, 8), skin)
+    m.position.y = l / 2
+    jt.add(m)
+    const nx = new T.Group()
+    nx.position.y = l
+    jt.add(nx)
+    j.push(jt)
+    p = nx
+  }
+  return { b, j }
+}
+
+function mkHand(sc, m, skin, cl, T) {
+  const g = new T.Group()
+  sc.add(g)
+  const palm = new T.Mesh(new T.BoxGeometry(0.085, 0.1, 0.026), skin)
+  palm.position.set(0, 0.05, 0)
+  g.add(palm)
+
+  const f = [0, 1, 2, 3].map((i) => {
+    const k = [1, 1.08, 0.98, 0.8][i]
+    return mkFinger(g, m * (0.03 - i * 0.02), 0.1, [0.04 * k, 0.03 * k, 0.025 * k], 0.0105, skin, T)
+  })
+
+  const limb = (r) => {
+    const mesh = new T.Mesh(new T.CylinderGeometry(r, r * 0.85, 1, 12), cl)
+    sc.add(mesh)
+    return mesh
   }
 
   return {
-    isLoaded: sceneState.isLoaded,
-    isPlaying: sceneState.isPlaying,
-    isPaused: sceneState.isPaused,
-    currentGloss: sceneState.currentGloss,
-    currentIndex: sceneState.currentIndex,
-    totalGlosses: sceneState.sequence.length,
-    progress: sceneState.totalDuration > 0
-      ? Math.min(1, Math.max(0, sceneState.elapsedTime / sceneState.totalDuration))
-      : 0,
-    speed: sceneState.speed,
-    unsupported: sceneState.unsupportedSigns,
+    g,
+    m,
+    f,
+    th: mkFinger(g, 0.05 * m, 0.02, [0.035, 0.03], 0.011, skin, T),
+    up: limb(0.045),
+    fo: limb(0.038),
   }
 }
 
-/**
- * Diagnostic helper to safely verify if WebGL 2 is functional before Three.js attempts initialization.
- * Result is cached to avoid repeated test context creations that consume browser WebGL context limits.
- */
-let cachedWebGL2Support = null
-
-export function checkWebGL2Support() {
-  if (cachedWebGL2Support !== null) {
-    return cachedWebGL2Support
+function setShape(h, c) {
+  for (let i = 0; i < 4; i++) {
+    const f = h.f[i]
+    const k = c[i + 1]
+    f.j[0].rotation.x = k * 1.5
+    f.j[1].rotation.x = k * 1.7
+    f.j[2].rotation.x = k * 1.1
+    f.b.rotation.z = -h.m * c[5] * (1.5 - i) * 0.12
   }
-
-  if (typeof window === 'undefined' || typeof document === 'undefined') {
-    cachedWebGL2Support = { ok: false, reason: 'WebGL is not available in non-browser environment.' }
-    return cachedWebGL2Support
-  }
-
-  try {
-    const canvas = document.createElement('canvas')
-    const gl = canvas.getContext('webgl2')
-    if (!gl) {
-      cachedWebGL2Support = {
-        ok: false,
-        reason:
-          'WebGL 2 graphics acceleration is disabled or blocked in your browser. Please ensure Hardware Acceleration is turned ON in browser settings (e.g. chrome://settings/system) or check your browser shields.',
-      }
-      return cachedWebGL2Support
-    }
-
-    if (gl.isContextLost && gl.isContextLost()) {
-      cachedWebGL2Support = {
-        ok: false,
-        reason: 'WebGL graphics context was lost. Refreshing the browser tab will restore GPU access.',
-      }
-      return cachedWebGL2Support
-    }
-
-    const precisionFormat = gl.getShaderPrecisionFormat(gl.VERTEX_SHADER, gl.HIGH_FLOAT)
-    if (!precisionFormat || precisionFormat.precision <= 0) {
-      cachedWebGL2Support = {
-        ok: false,
-        reason: 'Shader precision is unavailable on your graphics device.',
-      }
-      return cachedWebGL2Support
-    }
-
-    // Immediately release the diagnostic context so it does not count against the browser WebGL context limit
-    const loseExt = gl.getExtension('WEBGL_lose_context')
-    if (loseExt) {
-      loseExt.loseContext()
-    }
-
-    cachedWebGL2Support = { ok: true }
-    return cachedWebGL2Support
-  } catch (err) {
-    cachedWebGL2Support = { ok: false, reason: err.message || 'Error checking WebGL 2 capabilities.' }
-    return cachedWebGL2Support
-  }
+  const t = c[0]
+  h.th.b.rotation.set(t * 0.9, 0, h.m * (-0.7 + t * 0.5))
+  h.th.j[0].rotation.x = t * 0.3
+  h.th.j[1].rotation.x = t * 0.7
 }
 
-/**
- * Initializes the 3D scene, loads the realistic human avatar, and starts the render loop.
- * Accepts either a canvas element or a container div.
- */
-export function initAvatar(containerOrCanvas, onProgress, onError) {
-  if (sceneState) {
-    if (sceneState.isLoaded && onProgress) onProgress(100)
-    return
+function place(m, a, b, T) {
+  const UP = new T.Vector3(0, 1, 0)
+  const d = b.clone().sub(a)
+  const L = d.length()
+  m.position.copy(a).addScaledVector(d, 0.5)
+  m.scale.set(1, Math.max(L, 0.001), 1)
+  m.quaternion.setFromUnitVectors(UP, d.normalize())
+}
+
+function applyHand(H, side, s, T) {
+  const sgn = [-1, 1]
+  const UP = new T.Vector3(0, 1, 0)
+  const h = H[side]
+  const y = UP.clone().applyQuaternion(s.q)
+  const w0 = s.p.clone().addScaledVector(y, -0.06)
+  const sh = new T.Vector3(sgn[side] * 0.3, 1.45, 0)
+  const d = w0.clone().sub(sh)
+  const L = Math.min(Math.max(d.length(), 0.08), 0.57)
+  const u = d.normalize()
+  const a = (0.09 - 0.0784 + L * L) / (2 * L)
+  const hh = Math.sqrt(Math.max(0.09 - a * a, 0))
+  const pole = new T.Vector3(sgn[side] * 0.5, -1, -0.25)
+  const pp = pole.sub(u.clone().multiplyScalar(pole.dot(u))).normalize()
+  const el = sh.clone().addScaledVector(u, a).addScaledVector(pp, hh)
+  const w = sh.clone().addScaledVector(u, L)
+
+  h.g.position.copy(w)
+  h.g.quaternion.copy(s.q)
+  setShape(h, s.c)
+  place(h.up, sh, el, T)
+  place(h.fo, el, w, T)
+}
+
+function buildTimeline(gl, sp, R0, L0, T) {
+  const kf = [{ t: 0, h: [R0, L0] }]
+  let t = 0
+  const push = (h, d, gi) => {
+    t += d / sp
+    kf.push({ t, h, g: gi })
   }
 
-  // Pre-check WebGL 2 to avoid unhandled Three.js internal precision exceptions
-  const support = checkWebGL2Support()
-  if (!support.ok) {
-    console.error('WebGL 2 support check failed:', support.reason)
-    if (onError) onError(new Error(support.reason))
-    return
-  }
-
-  try {
-    let container = null
-    let canvas = null
-    let createdCanvas = false
-
-    if (containerOrCanvas instanceof HTMLCanvasElement) {
-      canvas = containerOrCanvas
-      container = canvas.parentElement
+  gl.forEach((w, gi) => {
+    let codes, l, b
+    if (w[0] === '#') {
+      codes = [...w.slice(1).toUpperCase()]
+        .filter((c) => /[A-Z]/.test(c))
+        .map((c, i) => `${c}|${i % 2 ? '.13' : '.1'},1.42,.42|UO`)
     } else {
-      container = containerOrCanvas
-      canvas = document.createElement('canvas')
-      canvas.style.width = '100%'
-      canvas.style.height = '100%'
-      canvas.style.display = 'block'
-      container.appendChild(canvas)
-      createdCanvas = true
+      const s = SG[w]
+      if (s) {
+        codes = s.k
+        l = s.l
+        b = s.b
+      } else {
+        codes = ['A|.1,1.4,.4|UO']
+      }
     }
 
-    const renderer = new THREE.WebGLRenderer({
-      canvas,
-      antialias: true,
-      alpha: true,
-      powerPreference: 'default',
+    codes.forEach((c, i) => {
+      push(
+        [
+          mkHandState(c, 0, T),
+          b ? mkHandState(c, 1, T) : l ? mkHandState(l[i] || l[0], 1, T) : L0,
+        ],
+        i ? 0.38 : 0.5,
+        gi
+      )
     })
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
-    renderer.outputColorSpace = THREE.SRGBColorSpace
+    push(kf[kf.length - 1].h, 0.22, gi)
+  })
 
-    const scene = new THREE.Scene()
+  push([R0, L0], 0.6, -1)
+  return kf
+}
 
-    // Front-facing camera: framing for RPM full-body avatar (head to waist, arms visible)
-    const camera = new THREE.PerspectiveCamera(28, 1, 0.1, 50)
-    camera.position.set(0, 1.42, 2.6)
-    camera.lookAt(0, 1.3, 0)
+const lerp = (a, b, e) => a + (b - a) * e
 
-    // Realistic Studio Lighting
-    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x8899aa, 0.9)
-    scene.add(hemiLight)
-
-    const keyLight = new THREE.DirectionalLight(0xffffff, 0.95)
-    keyLight.position.set(1.5, 3.2, 2.8)
-    scene.add(keyLight)
-
-    const fillLight = new THREE.DirectionalLight(0xccddee, 0.45)
-    fillLight.position.set(-1.8, 2.0, 1.6)
-    scene.add(fillLight)
-
-    const rimLight = new THREE.DirectionalLight(0xffffff, 0.35)
-    rimLight.position.set(0, 3.0, -2.2)
-    scene.add(rimLight)
-
-    sceneState = {
-      container,
-      canvas,
-      createdCanvas,
-      renderer,
-      scene,
-      camera,
-      model: null,
-      mixer: null,
-      lastTimestamp: performance.now(),
-      idleAction: null,
-      activeAction: null,
-      isLoaded: false,
-      isPlaying: false,
-      isPaused: false,
-      speed: 1,
-      sequence: [],
-      currentIndex: -1,
-      currentGloss: '',
-      elapsedTime: 0,
-      totalDuration: 0,
-      unsupportedSigns: [],
-      animId: 0,
-      shoulders: {
-        R: new THREE.Vector3(-0.171, 1.531, -0.049),
-        L: new THREE.Vector3(0.171, 1.531, -0.049),
-      },
+/**
+ * Initializes the procedural 3D signing avatar inside the given canvas.
+ * @param {HTMLCanvasElement} canvas
+ * @param {Function} [onGlossChange] Optional callback fired when active gloss changes
+ */
+export function initAvatar(containerOrCanvas, onGlossChange = null) {
+  let canvas = containerOrCanvas
+  if (containerOrCanvas && containerOrCanvas.tagName !== 'CANVAS') {
+    let existing = containerOrCanvas.querySelector('canvas')
+    if (!existing) {
+      existing = document.createElement('canvas')
+      existing.style.width = '100%'
+      existing.style.height = '100%'
+      existing.style.display = 'block'
+      containerOrCanvas.appendChild(existing)
     }
-
-    // Load the Realistic Human Avatar GLB
-    const loader = new GLTFLoader()
-    loader.load(
-      '/models/avatar/human-avatar.glb',
-      (gltf) => {
-        if (!sceneState) return // destroyed while loading
-        const model = gltf.scene
-        scene.add(model)
-        sceneState.model = model
-
-        // Bone name sets — broad list covers standard, _JNT, and mixamorig conventions
-        const RIGHT_ARM_SET = new Set(['RightArm', 'RightShoulder', 'r_arm_JNT', 'r_shoulder_JNT', 'mixamorigRightArm'])
-        const LEFT_ARM_SET  = new Set(['LeftArm',  'LeftShoulder',  'l_arm_JNT', 'l_shoulder_JNT', 'mixamorigLeftArm'])
-
-        // Locate shoulder world positions for IK calibration
-        // Also fix backwards hand orientation: some avatars are exported with shoulders rotated
-        // 180° around Y, causing palms to face backwards. Detect and correct this automatically.
-        let shoulderYFlip = false
-        const q180Y = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI)
-
-        model.traverse((obj) => {
-          if (obj.isBone || obj.type === 'Bone') {
-            if (RIGHT_ARM_SET.has(obj.name)) {
-              obj.getWorldPosition(sceneState.shoulders.R)
-              // Check if the shoulder's Y component is significantly negative (flipped)
-              // LeftShoulder quaternion y≈0.555 in this avatar indicates 180° Y rotation on the bind pose
-              if (Math.abs(obj.quaternion.y) > 0.4) {
-                shoulderYFlip = true
-              }
-            } else if (LEFT_ARM_SET.has(obj.name)) {
-              obj.getWorldPosition(sceneState.shoulders.L)
-            }
-          }
-        })
-
-        // If bind pose has hands facing backwards, apply corrective rotation to both forearms
-        // so they face forward (toward camera) in rest pose
-        if (shoulderYFlip) {
-          model.traverse((obj) => {
-            if (obj.isBone || obj.type === 'Bone') {
-              const n = obj.name
-              if (
-                n === 'RightArm' || n === 'LeftArm' ||
-                n === 'RightForeArm' || n === 'LeftForeArm' ||
-                n === 'RightHand' || n === 'LeftHand' ||
-                n === 'r_arm_JNT' || n === 'l_arm_JNT' ||
-                n === 'r_forearm_JNT' || n === 'l_forearm_JNT' ||
-                n === 'r_hand_JNT' || n === 'l_hand_JNT'
-              ) {
-                obj.quaternion.premultiply(q180Y)
-                obj.updateMatrixWorld(true)
-              }
-            }
-          })
-          console.log('[Avatar] Applied 180° Y correction to arm/hand bones (backwards bind pose detected)')
-        }
-
-        // Setup AnimationMixer
-        const mixer = new THREE.AnimationMixer(model)
-        sceneState.mixer = mixer
-
-        // Setup and play natural idle resting pose
-        const idleClip = createIdleClip()
-        const idleAction = mixer.clipAction(idleClip)
-        idleAction.setLoop(THREE.LoopRepeat)
-        idleAction.play()
-        sceneState.idleAction = idleAction
-        sceneState.activeAction = idleAction
-
-        sceneState.isLoaded = true
-        if (onProgress) onProgress(100)
-        notifyListeners()
-      },
-      (xhr) => {
-        if (xhr.lengthComputable && onProgress) {
-          const pct = Math.round((xhr.loaded / xhr.total) * 100)
-          onProgress(pct)
-        }
-      },
-      (err) => {
-        console.error('Error loading human avatar GLB:', err)
-        if (onError) onError(err)
-      }
-    )
-
-    // Animation Render Loop (Using standard performance.now to avoid deprecated THREE.Clock)
-    function animate(now) {
-      if (!sceneState) return
-      sceneState.animId = requestAnimationFrame(animate)
-
-      const currentTime = now || performance.now()
-      const delta = Math.min((currentTime - sceneState.lastTimestamp) / 1000, 0.1)
-      sceneState.lastTimestamp = currentTime
-
-      if (sceneState.mixer) {
-        if (!sceneState.isPaused) {
-          sceneState.mixer.update(delta * sceneState.speed)
-
-          if (sceneState.isPlaying) {
-            sceneState.elapsedTime += delta * sceneState.speed
-            notifyListeners()
-          }
-        }
-      }
-
-      // Responsive sizing
-      const parent = canvas.parentElement
-      if (parent && parent.clientWidth && parent.clientHeight) {
-        const w = parent.clientWidth
-        const h = parent.clientHeight
-        const dpr = Math.min(window.devicePixelRatio || 1, 2)
-        if (canvas.width !== Math.floor(w * dpr) || canvas.height !== Math.floor(h * dpr)) {
-          renderer.setSize(w, h, false)
-          camera.aspect = w / h
-          camera.updateProjectionMatrix()
-        }
-      }
-
-      renderer.render(scene, camera)
-    }
-
-    sceneState.lastTimestamp = performance.now()
-    sceneState.animId = requestAnimationFrame(animate)
-  } catch (err) {
-    console.error('Avatar WebGL initialization error:', err)
-    sceneState = null
-    if (onError) onError(err)
+    canvas = existing
   }
+
+  if (sceneState) {
+    if (sceneState.canvas === canvas) return
+    destroyAvatar()
+  }
+
+  const T = getThree()
+  if (!T) {
+    throw new Error('Three.js is not loaded. Please ensure /assets/three.min.js is present.')
+  }
+
+  const rnd = new T.WebGLRenderer({ canvas, antialias: true, alpha: true })
+  const sc = new T.Scene()
+  const cam = new T.PerspectiveCamera(28, 1, 0.1, 50)
+  cam.position.set(0, 1.5, 3.2)
+  cam.lookAt(0, 1.42, 0)
+  rnd.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
+
+  sc.add(new T.HemisphereLight(0xffffff, 0x778899, 1))
+  const dl = new T.DirectionalLight(0xffffff, 0.7)
+  dl.position.set(1, 3, 3)
+  sc.add(dl)
+
+  const M = (c) => new T.MeshStandardMaterial({ color: c, roughness: 0.55 })
+  const skin = M(0xdba37f)
+  const cl = M(0x2a6df4)
+  const dk = M(0x222222)
+
+  const add = (g, m, x, y, z, p = sc) => {
+    const o = new T.Mesh(g, m)
+    o.position.set(x, y, z)
+    p.add(o)
+    return o
+  }
+
+  add(new T.BoxGeometry(0.62, 0.8, 0.28), cl, 0, 1.12, 0)
+  add(new T.CylinderGeometry(0.06, 0.07, 0.12, 16), skin, 0, 1.6, 0)
+  add(new T.SphereGeometry(0.06, 16, 12), cl, -0.3, 1.46, 0)
+  add(new T.SphereGeometry(0.06, 16, 12), cl, 0.3, 1.46, 0)
+
+  const head = new T.Group()
+  head.position.set(0, 1.76, 0)
+  sc.add(head)
+  add(new T.SphereGeometry(0.16, 32, 24), skin, 0, 0, 0, head)
+  add(new T.SphereGeometry(0.165, 24, 16, 0, 6.28, 0, 1.5), dk, 0, 0.01, -0.01, head)
+  add(new T.SphereGeometry(0.018, 12, 8), dk, -0.055, 0.03, 0.15, head)
+  add(new T.SphereGeometry(0.018, 12, 8), dk, 0.055, 0.03, 0.15, head)
+  const mouth = add(new T.BoxGeometry(0.06, 0.012, 0.01), dk, 0, -0.07, 0.155, head)
+
+  const H = [mkHand(sc, 1, skin, cl, T), mkHand(sc, -1, skin, cl, T)]
+
+  const R0 = mkHandState('RL|.3,1.02,.1|RS', 0, T)
+  const L0 = mkHandState('RL|.3,1.02,.1|RS', 1, T)
+
+  applyHand(H, 0, R0, T)
+  applyHand(H, 1, L0, T)
+
+  sceneState = {
+    canvas,
+    renderer: rnd,
+    scene: sc,
+    camera: cam,
+    H,
+    mouth,
+    head,
+    R0,
+    L0,
+    playing: false,
+    kf: [],
+    gl: [],
+    t0: 0,
+    cur: -3,
+    currentGloss: '',
+    currentIndex: -1,
+    isLoaded: true,
+    animId: 0,
+    onGlossChange,
+  }
+
+  function frame(now) {
+    if (!sceneState) return
+    sceneState.animId = requestAnimationFrame(frame)
+
+    const s = sceneState
+    const stage = canvas.parentElement
+    if (!stage || !stage.clientWidth) return
+
+    let t = 0
+    if (s.playing && s.kf.length >= 2) {
+      t = (now - s.t0) / 1000
+      const last = s.kf[s.kf.length - 1]
+      if (t >= last.t) {
+        s.playing = false
+        t = last.t
+        s.mouth.scale.y = 1
+        s.head.rotation.x = 0
+        s.cur = -3
+        s.currentGloss = ''
+        s.currentIndex = -1
+        if (s.onGlossChange) s.onGlossChange(-1, '')
+        notifyListeners()
+      } else {
+        let i = 0
+        while (i < s.kf.length - 2 && s.kf[i + 1].t < t) i++
+        const A = s.kf[i]
+        const B = s.kf[i + 1]
+        const u = Math.min(1, Math.max(0, (t - A.t) / (B.t - A.t)))
+        const e = u * u * (3 - 2 * u) // smoothstep
+
+        for (let side = 0; side < 2; side++) {
+          const HA = A.h[side]
+          const HB = B.h[side]
+          applyHand(H, side, {
+            p: HA.p.clone().lerp(HB.p, e),
+            q: HA.q.clone().slerp(HB.q, e),
+            c: HA.c.map((v, j) => lerp(v, HB.c[j], e)),
+          }, T)
+        }
+
+        s.mouth.scale.y = 1 + 0.8 * Math.abs(Math.sin(t * 9))
+        s.head.rotation.x = 0.03 * Math.sin(t * 3)
+
+        if (B.g !== s.cur) {
+          s.cur = B.g
+          s.currentIndex = B.g
+          s.currentGloss = B.g >= 0 && B.g < s.gl.length ? s.gl[B.g] : ''
+          if (s.onGlossChange) s.onGlossChange(s.currentIndex, s.currentGloss)
+          notifyListeners()
+        }
+      }
+    } else if (s.cur === -2) {
+      applyHand(H, 0, s.R0, T)
+      applyHand(H, 1, s.L0, T)
+      s.cur = -3
+    }
+
+    const w = stage.clientWidth
+    const h = stage.clientHeight
+    if (
+      s.renderer.domElement.width !== Math.floor(w * s.renderer.getPixelRatio()) ||
+      s.renderer.domElement.height !== Math.floor(h * s.renderer.getPixelRatio())
+    ) {
+      s.renderer.setSize(w, h, false)
+      s.camera.aspect = w / h
+      s.camera.updateProjectionMatrix()
+    }
+
+    s.renderer.render(s.scene, s.camera)
+  }
+
+  sceneState.animId = requestAnimationFrame(frame)
+  notifyListeners()
 }
 
 /**
- * Converts text into sign glosses and executes sequential animation playback.
+ * Animate the avatar to sign the given text.
+ * @param {string} text English sentence
+ * @param {number} [speed=1] Playback speed multiplier (0.7 to 1.4)
+ * @returns {string[]} Array of ASL glosses
  */
 export function signText(text, speed = 1) {
-  if (!sceneState || !sceneState.isLoaded) return []
+  if (!sceneState) return []
+  const T = getThree()
+  if (!T) return []
 
-  const glosses = toGloss(text)
-  sceneState.speed = speed
-
-  // Identify supported vs unsupported signs
-  const unsupported = []
-  const validSequence = []
-
-  glosses.forEach((g) => {
-    if (isSignSupported(g)) {
-      validSequence.push(g)
-    } else {
-      unsupported.push(g)
-    }
-  })
-
-  sceneState.unsupportedSigns = unsupported
-  sceneState.sequence = validSequence
-  sceneState.currentIndex = -1
-  sceneState.currentGloss = ''
-  sceneState.elapsedTime = 0
-
-  if (validSequence.length === 0) {
-    sceneState.isPlaying = false
-    sceneState.isPaused = false
-    notifyListeners()
-    return glosses
-  }
-
-  // Pre-calculate total duration for progress indicator
-  let totalDur = 0
-  validSequence.forEach((g) => {
-    const def = SIGN_LEXICON[g.toUpperCase()]
-    totalDur += def ? def.duration : 1.2
-  })
-  sceneState.totalDuration = totalDur
-
-  sceneState.isPlaying = true
-  sceneState.isPaused = false
-
-  playNextSign(0)
-  return glosses
+  const gl = toGloss(text)
+  sceneState.gl = gl
+  sceneState.kf = buildTimeline(gl, speed, sceneState.R0, sceneState.L0, T)
+  sceneState.t0 = performance.now()
+  sceneState.playing = true
+  sceneState.cur = -2
+  notifyListeners()
+  return gl
 }
 
 /**
- * Plays a sign in the sequence with smooth transitions.
+ * Destroy the current avatar instance and free resources.
  */
-function playNextSign(index) {
-  if (!sceneState || !sceneState.isPlaying) return
-
-  if (index >= sceneState.sequence.length) {
-    // Sequence finished — return smoothly to idle
-    finishSequence()
-    return
-  }
-
-  sceneState.currentIndex = index
-  const gloss = sceneState.sequence[index]
-  sceneState.currentGloss = gloss
-
-  const clip = createSignClip(gloss, sceneState.shoulders.R, sceneState.shoulders.L)
-  if (!clip) {
-    playNextSign(index + 1)
-    return
-  }
-
-  const mixer = sceneState.mixer
-  const newAction = mixer.clipAction(clip)
-  newAction.reset()
-  newAction.setLoop(THREE.LoopOnce)
-  newAction.clampWhenFinished = true
-
-  const prevAction = sceneState.activeAction
-  const transitionDuration = 0.22
-
-  if (prevAction && prevAction !== newAction) {
-    newAction.crossFadeFrom(prevAction, transitionDuration, true)
-  }
-  newAction.play()
-  sceneState.activeAction = newAction
-
-  notifyListeners()
-
-  // Schedule next sign when this sign completes
-  const clipDuration = (clip.duration / sceneState.speed) * 1000
-  const waitMs = Math.max(clipDuration - 180, 200)
-
-  setTimeout(() => {
-    if (sceneState && sceneState.isPlaying && sceneState.currentIndex === index) {
-      playNextSign(index + 1)
-    }
-  }, waitMs)
-}
-
-function finishSequence() {
-  if (!sceneState) return
-
-  sceneState.isPlaying = false
-  sceneState.isPaused = false
-  sceneState.currentGloss = ''
-  sceneState.elapsedTime = sceneState.totalDuration
-
-  if (sceneState.idleAction && sceneState.activeAction !== sceneState.idleAction) {
-    sceneState.idleAction.reset()
-    sceneState.idleAction.crossFadeFrom(sceneState.activeAction, 0.35, true)
-    sceneState.idleAction.play()
-    sceneState.activeAction = sceneState.idleAction
-  }
-
-  notifyListeners()
-}
-
-// ---- Playback Control Functions ----
-
-export function pauseAvatar() {
-  if (!sceneState) return
-  sceneState.isPaused = true
-  notifyListeners()
-}
-
-export function resumeAvatar() {
-  if (!sceneState) return
-  sceneState.isPaused = false
-  notifyListeners()
-}
-
-export function replayAvatar() {
-  if (!sceneState || sceneState.sequence.length === 0) return
-  sceneState.isPlaying = true
-  sceneState.isPaused = false
-  sceneState.elapsedTime = 0
-  playNextSign(0)
-}
-
-export function resetAvatarPose() {
-  if (!sceneState) return
-  sceneState.isPlaying = false
-  sceneState.isPaused = false
-  sceneState.currentIndex = -1
-  sceneState.currentGloss = ''
-  sceneState.elapsedTime = 0
-  sceneState.sequence = []
-
-  if (sceneState.mixer) {
-    sceneState.mixer.stopAllAction()
-  }
-
-  if (sceneState.idleAction) {
-    sceneState.idleAction.reset()
-    sceneState.idleAction.play()
-    sceneState.activeAction = sceneState.idleAction
-  }
-
-  notifyListeners()
-}
-
-export function setAvatarSpeed(speed) {
-  if (!sceneState) return
-  sceneState.speed = speed
-  notifyListeners()
-}
-
-export function isAvatarReady() {
-  return sceneState && sceneState.isLoaded
-}
-
 export function destroyAvatar() {
   if (!sceneState) return
-
   if (sceneState.animId) {
     cancelAnimationFrame(sceneState.animId)
-    sceneState.animId = 0
   }
-
-  if (sceneState.mixer) {
-    sceneState.mixer.stopAllAction()
-  }
-
-  if (sceneState.model && sceneState.scene) {
-    sceneState.scene.remove(sceneState.model)
-    sceneState.model.traverse((child) => {
-      if (child.geometry) child.geometry.dispose()
-      if (child.material) {
-        if (Array.isArray(child.material)) {
-          child.material.forEach((m) => m.dispose())
-        } else {
-          child.material.dispose()
-        }
-      }
-    })
-  }
-
-  if (sceneState.renderer) {
-    try {
-      if (typeof sceneState.renderer.forceContextLoss === 'function') {
-        sceneState.renderer.forceContextLoss()
-      }
-      const gl = sceneState.renderer.getContext()
-      if (gl) {
-        const loseExt = gl.getExtension('WEBGL_lose_context')
-        if (loseExt) loseExt.loseContext()
-      }
-      sceneState.renderer.dispose()
-    } catch (e) {
-      console.warn('Error disposing WebGL renderer:', e)
-    }
-  }
-
-  if (sceneState.createdCanvas && sceneState.canvas && sceneState.canvas.parentElement) {
-    sceneState.canvas.parentElement.removeChild(sceneState.canvas)
-  }
-
+  try {
+    sceneState.renderer.dispose()
+  } catch {}
   sceneState = null
   notifyListeners()
 }
+
+/**
+ * Check if the avatar is ready.
+ */
+export function isAvatarReady() {
+  return Boolean(sceneState && sceneState.isLoaded)
+}
+
+export function pauseAvatar() {
+  if (sceneState) {
+    sceneState.playing = false
+    notifyListeners()
+  }
+}
+
+export function resumeAvatar() {
+  if (sceneState && sceneState.kf.length >= 2) {
+    sceneState.playing = true
+    notifyListeners()
+  }
+}
+
+export function replayAvatar() {
+  if (sceneState && sceneState.kf.length >= 2) {
+    sceneState.t0 = performance.now()
+    sceneState.playing = true
+    sceneState.cur = -2
+    notifyListeners()
+  }
+}
+
+export function resetAvatarPose() {
+  if (sceneState) {
+    sceneState.playing = false
+    sceneState.cur = -2
+    if (sceneState.mouth) sceneState.mouth.scale.y = 1
+    if (sceneState.head) sceneState.head.rotation.x = 0
+    notifyListeners()
+  }
+}
+
+export function setAvatarSpeed(speed) {
+  // speed multiplier
+}
+
+export const SIGN_LEXICON = SG
+
+export function isSignSupported(word) {
+  if (!word) return false
+  const w = String(word).toUpperCase()
+  return Boolean(SG[w])
+}
+

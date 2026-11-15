@@ -147,7 +147,6 @@ export default function AvatarPage() {
           <div className="card-heading">
             <div>
               <span className="eyebrow">3D SIGNING AVATAR</span>
-              <h2>Live ASL signing</h2>
             </div>
             <StatusPill tone={ready ? 'teal' : 'slate'}>
               {ready ? 'Active' : 'Standby'}
